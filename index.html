@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Serve Receive Builder</title>
+<link rel="stylesheet" href="styles.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <header class="brand">
+      <h1>Serve Receive Builder</h1>
+      <p class="subtitle">Volleyball formation designer</p>
+    </header>
+
+    <section class="control-group">
+      <h2>System</h2>
+      <div class="segmented" id="system-toggle" role="tablist">
+        <button class="seg-btn active" data-value="5-1" role="tab">5-1</button>
+        <button class="seg-btn" data-value="6-2" role="tab">6-2</button>
+      </div>
+    </section>
+
+    <section class="control-group">
+      <h2>Number of Passers</h2>
+      <div class="segmented" id="passer-count">
+        <button class="seg-btn" data-value="2">2</button>
+        <button class="seg-btn active" data-value="3">3</button>
+        <button class="seg-btn" data-value="4">4</button>
+        <button class="seg-btn" data-value="5">5</button>
+      </div>
+    </section>
+
+    <section class="control-group">
+      <h2>Passers</h2>
+      <p class="hint">Select which positions pass. Libero is a passer by default.</p>
+      <div class="passer-checkboxes" id="passer-list"></div>
+      <div class="warn" id="passer-warn"></div>
+    </section>
+
+    <section class="control-group">
+      <h2>Display</h2>
+      <label class="toggle-row">
+        <input type="checkbox" id="hints-toggle" checked />
+        <span>Show overlap hints</span>
+      </label>
+      <p class="hint">Red arrows mark common, easy-to-miss overlap traps (setter and front-row passers).</p>
+    </section>
+
+    <section class="control-group">
+      <h2>Export</h2>
+      <div class="export-row">
+        <button class="btn" id="export-png">PNG</button>
+        <button class="btn" id="export-pdf">PDF</button>
+        <button class="btn ghost" id="reset-btn">Reset Positions</button>
+      </div>
+    </section>
+
+    <section class="control-group legend">
+      <h2>Legend</h2>
+      <ul>
+        <li><span class="dot setter"></span> Setter</li>
+        <li><span class="dot oh"></span> Outside Hitter</li>
+        <li><span class="dot mb"></span> Middle Blocker</li>
+        <li><span class="dot op"></span> Opposite</li>
+        <li><span class="dot lib"></span> Libero</li>
+        <li><span class="dot passer-ind"></span> Passer (ring)</li>
+      </ul>
+    </section>
+  </aside>
+
+  <main class="main">
+    <div class="courts-grid" id="courts-grid"></div>
+  </main>
+</div>
+
+<script src="formation.js"></script>
+<script src="court.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
