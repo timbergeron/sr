@@ -468,6 +468,22 @@ body.swipe-cue-dismissed .mobile-swipe-cue {
 .player:active { cursor: grabbing; }
 .court-card.zone-view .player:active,
 .court-card.zone-view-animating .player:active { cursor: default; }
+.player-visual {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.player.dragging .player-visual {
+  filter: drop-shadow(0 5px 7px rgba(0, 0, 0, 0.32));
+  transform: scale(1.08);
+}
+.player.dragging .chip {
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 0.07;
+}
+.player.drop-settle .player-visual {
+  animation: playerDropSettle 0.18s ease-out;
+}
 .player .chip {
   stroke: rgba(0,0,0,0.6);
   stroke-width: 0.04;
@@ -496,6 +512,11 @@ body.swipe-cue-dismissed .mobile-swipe-cue {
 .player:focus-visible .chip {
   stroke: white;
   stroke-width: 0.08;
+}
+@keyframes playerDropSettle {
+  0% { transform: scale(1.08); }
+  55% { transform: scale(0.98); }
+  100% { transform: scale(1); }
 }
 
 /* Overlap tooltip */
@@ -588,6 +609,67 @@ body.swipe-cue-dismissed .mobile-swipe-cue {
 .tooltip-state.warn {
   color: #ffb3ad;
   background: rgba(248, 81, 73, 0.16);
+}
+
+/* Undo toast */
+.undo-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  max-width: calc(100vw - 28px);
+  padding: 8px 10px 8px 14px;
+  color: var(--text);
+  background: rgba(14, 17, 22, 0.96);
+  border: 1px solid rgba(88, 166, 255, 0.26);
+  border-radius: 8px;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.38);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.undo-toast.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+.undo-toast-message {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.undo-toast-action {
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 10px;
+  color: var(--accent-2);
+  background: rgba(88, 166, 255, 0.12);
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+.undo-toast-action:hover {
+  background: rgba(88, 166, 255, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-visual,
+  .undo-toast {
+    transition: none;
+  }
+  .player.drop-settle .player-visual {
+    animation: none;
+  }
 }
 
 /* Sidebar scrollbar */

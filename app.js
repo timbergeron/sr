@@ -420,6 +420,7 @@ function renderRosterLabels() {
 }
 
 function renderCourts() {
+  if (Court.dismissUndoToast) Court.dismissUndoToast();
   const grid = document.getElementById('courts-grid');
   grid.innerHTML = '';
   for (const rot of state.rotations) {

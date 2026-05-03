@@ -3,6 +3,8 @@
 const NS = 'http://www.w3.org/2000/svg';
 const VIEW_PAD = 0.6; // padding around court for net band, labels
 const ZONE_VIEW_ANIMATION_MS = 650;
+const DROP_SETTLE_MS = 180;
+const UNDO_TOAST_MS = 5200;
 const ZONE_CENTERS = {
   4: { x: 1.5, y: 1.5 },
   3: { x: 4.5, y: 1.5 },
@@ -12,6 +14,7 @@ const ZONE_CENTERS = {
   1: { x: 7.5, y: 6.0 }
 };
 const playerAnimations = new WeakMap();
+let undoToastTimer = null;
 
 function svg(tag, attrs = {}, parent = null) {
   const el = document.createElementNS(NS, tag);
@@ -208,23 +211,24 @@ function renderPlayer(parent, zone, occ, pos, opts) {
     transform: `translate(${pos.x}, ${pos.y})`
   }, parent);
   setPlayerTransform(g, pos);
+  const visual = svg('g', { class: 'player-visual' }, g);
 
   // Passer ring (drawn behind chip)
   const isPasser = SR.isSelectedPasser(occ, opts.passerSet);
   if (isPasser) {
-    svg('circle', { class: 'ring', r: SR.PLAYER_R + 0.12 }, g);
+    svg('circle', { class: 'ring', r: SR.PLAYER_R + 0.12 }, visual);
   }
 
   svg('circle', {
     class: `chip ${role.cls}`,
     r: SR.PLAYER_R
-  }, g);
+  }, visual);
 
   const label = svg('text', {
     class: 'label',
     y: '0.04',
     'font-size': chipFontSize(displayLabel)
-  }, g);
+  }, visual);
   label.textContent = displayLabel;
 
   return g;
@@ -496,6 +500,7 @@ function attachDrag(root, playerEls, rotationData, hintState, opts, tooltip, vie
   let dragState = null;
   const passerZones = currentPasserZones(rotationData, opts.passerSet);
   const passerZoneSet = new Set(passerZones);
+  const playerLabels = opts.playerLabels || {};
 
   function svgPoint(e) {
     const rect = root.getBoundingClientRect();
@@ -515,9 +520,18 @@ function attachDrag(root, playerEls, rotationData, hintState, opts, tooltip, vie
       e.preventDefault();
       hideOverlapTooltip(tooltip, hintState);
       g.setPointerCapture(e.pointerId);
+      if (g.parentNode) g.parentNode.appendChild(g);
+      g.classList.remove('drop-settle');
+      g.classList.add('dragging');
       const p = svgPoint(e);
       const cur = rotationData.positions[zone];
-      dragState = { zone, offsetX: cur.x - p.x, offsetY: cur.y - p.y, pointerId: e.pointerId };
+      dragState = {
+        zone,
+        offsetX: cur.x - p.x,
+        offsetY: cur.y - p.y,
+        pointerId: e.pointerId,
+        before: clonePositions(rotationData.positions)
+      };
     });
     g.addEventListener('pointermove', (e) => {
       if (!dragState || dragState.pointerId !== e.pointerId) return;
@@ -536,15 +550,125 @@ function attachDrag(root, playerEls, rotationData, hintState, opts, tooltip, vie
     g.addEventListener('pointerup', (e) => {
       if (!dragState || dragState.pointerId !== e.pointerId) return;
       try { g.releasePointerCapture(e.pointerId); } catch(_) {}
+      const finishedDrag = dragState;
       dragState = null;
-      if (opts.onPositionsChange) opts.onPositionsChange(rotationData);
+      g.classList.remove('dragging');
+      const after = clonePositions(rotationData.positions);
+      const moved = positionsChanged(finishedDrag.before, after);
+      if (moved) {
+        playDropSettle(g);
+        if (opts.onPositionsChange) opts.onPositionsChange(rotationData);
+        showUndoToast(moveLabel(rotationData, finishedDrag.zone, playerLabels), () => {
+          restorePositions(rotationData.positions, finishedDrag.before);
+          updatePlayerPositions(playerEls, rotationData.positions, {
+            animate: true,
+            duration: 220
+          });
+          if (hintState.activeZone) updateHints(hintState.lines, rotationData.positions);
+          if (opts.onPositionsChange) opts.onPositionsChange(rotationData);
+        });
+      }
     });
     g.addEventListener('pointercancel', () => {
       if (!dragState) return;
+      playerEls[dragState.zone].classList.remove('dragging');
       dragState = null;
       if (opts.onPositionsChange) opts.onPositionsChange(rotationData);
     });
   }
+}
+
+function moveLabel(rotationData, zone, labels) {
+  const occ = SR.occupantInfo(rotationData.lineupL[zone]);
+  return playerDisplayLabel(occ.id, labels);
+}
+
+function clonePositions(positions) {
+  const clone = {};
+  for (const z of [1, 2, 3, 4, 5, 6]) {
+    const p = positions[z];
+    if (p) clone[z] = { x: p.x, y: p.y };
+  }
+  return clone;
+}
+
+function restorePositions(target, source) {
+  for (const z of [1, 2, 3, 4, 5, 6]) {
+    if (!source[z]) continue;
+    target[z] = { x: source[z].x, y: source[z].y };
+  }
+}
+
+function positionsChanged(a, b) {
+  for (const z of [1, 2, 3, 4, 5, 6]) {
+    if (!a[z] || !b[z]) continue;
+    if (Math.hypot(a[z].x - b[z].x, a[z].y - b[z].y) > 0.01) return true;
+  }
+  return false;
+}
+
+function playDropSettle(g) {
+  if (prefersReducedMotion()) return;
+  g.classList.remove('drop-settle');
+  void g.getBoundingClientRect();
+  g.classList.add('drop-settle');
+  window.setTimeout(() => {
+    g.classList.remove('drop-settle');
+  }, DROP_SETTLE_MS);
+}
+
+function ensureUndoToast() {
+  let toast = document.querySelector('.undo-toast');
+  if (toast) return toast;
+
+  toast = document.createElement('div');
+  toast.className = 'undo-toast';
+  toast.setAttribute('role', 'status');
+  toast.setAttribute('aria-live', 'polite');
+  toast.setAttribute('aria-hidden', 'true');
+
+  const message = document.createElement('span');
+  message.className = 'undo-toast-message';
+
+  const button = document.createElement('button');
+  button.className = 'undo-toast-action';
+  button.type = 'button';
+  button.tabIndex = -1;
+  button.textContent = 'Undo';
+
+  toast.appendChild(message);
+  toast.appendChild(button);
+  document.body.appendChild(toast);
+  return toast;
+}
+
+function hideUndoToast() {
+  const toast = document.querySelector('.undo-toast');
+  if (!toast) return;
+  const button = toast.querySelector('.undo-toast-action');
+  window.clearTimeout(undoToastTimer);
+  toast.classList.remove('visible');
+  toast.setAttribute('aria-hidden', 'true');
+  if (button) button.tabIndex = -1;
+}
+
+function showUndoToast(label, onUndo) {
+  const toast = ensureUndoToast();
+  const message = toast.querySelector('.undo-toast-message');
+  const button = toast.querySelector('.undo-toast-action');
+
+  window.clearTimeout(undoToastTimer);
+  message.textContent = `Moved ${label}`;
+  button.tabIndex = 0;
+  button.onclick = () => {
+    hideUndoToast();
+    onUndo();
+  };
+  toast.setAttribute('aria-hidden', 'false');
+  window.requestAnimationFrame(() => {
+    toast.classList.add('visible');
+  });
+  undoToastTimer = window.setTimeout(hideUndoToast, UNDO_TOAST_MS);
 }
 
 function updatePlayerPositions(playerEls, positions, opts = {}) {
@@ -655,4 +779,8 @@ function animatePlayerTo(g, target, opts = {}) {
   playerAnimations.set(g, animation);
 }
 
-window.Court = { renderCourtCard, updatePlayerPositions };
+window.Court = {
+  renderCourtCard,
+  updatePlayerPositions,
+  dismissUndoToast: hideUndoToast
+};
