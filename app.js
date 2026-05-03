@@ -1,11 +1,222 @@
 // State and UI wiring.
 
+const SHARE_HASH_PREFIX = 'sr=';
+const SHARE_VERSION = 1;
+const POSITION_ZONES = [1, 2, 3, 4, 5, 6];
+let shareSyncTimer = null;
+let shareStatusTimer = null;
+
 const state = {
   system: '5-1',          // '5-1' or '6-2'
   passerCount: 3,
   passers: new Set(['L', 'O1', 'O2']), // canonical position ids ('L' for libero)
+  playerLabels: {},
+  showHints: true,
+  showBackrowMAsL: true,
+  showSpotNumbers: false,
   rotations: []           // 6 rotation data objects
 };
+
+function customLabelFor(id) {
+  const label = (state.playerLabels[id] || '').trim();
+  return label || SR.ROLES[id].label;
+}
+
+function hasCustomLabel(id) {
+  return Boolean((state.playerLabels[id] || '').trim());
+}
+
+function playerSummary(ids) {
+  return ids.map(id => {
+    const label = customLabelFor(id);
+    return hasCustomLabel(id) ? `${id}:${label}` : id;
+  }).join(', ');
+}
+
+function cleanedPlayerLabels() {
+  const labels = {};
+  for (const [id, value] of Object.entries(state.playerLabels)) {
+    const label = String(value || '').trim();
+    if (SR.ROLES[id] && label) labels[id] = label;
+  }
+  return labels;
+}
+
+function roundCoord(value) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function currentPositionPayload() {
+  return state.rotations.map(rot => (
+    POSITION_ZONES.map(zone => {
+      const p = rot.positions[zone];
+      return p ? [roundCoord(p.x), roundCoord(p.y)] : null;
+    })
+  ));
+}
+
+function buildSharePayload() {
+  return {
+    v: SHARE_VERSION,
+    system: state.system,
+    passerCount: state.passerCount,
+    passers: [...state.passers],
+    labels: cleanedPlayerLabels(),
+    display: {
+      hints: state.showHints,
+      backrowMAsL: state.showBackrowMAsL,
+      spotNumbers: state.showSpotNumbers
+    },
+    positions: currentPositionPayload()
+  };
+}
+
+function encodeSharePayload(payload) {
+  const json = JSON.stringify(payload);
+  const bytes = new TextEncoder().encode(json);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function decodeSharePayload(encoded) {
+  const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function shareHash() {
+  return SHARE_HASH_PREFIX + encodeSharePayload(buildSharePayload());
+}
+
+function syncShareUrl() {
+  if (!state.rotations.length) return;
+  const url = new URL(window.location.href);
+  url.hash = shareHash();
+  window.history.replaceState(null, '', url);
+}
+
+function scheduleShareUrlSync() {
+  window.clearTimeout(shareSyncTimer);
+  shareSyncTimer = window.setTimeout(syncShareUrl, 200);
+}
+
+function setShareStatus(message) {
+  const el = document.getElementById('share-status');
+  if (!el) return;
+  el.textContent = message;
+  window.clearTimeout(shareStatusTimer);
+  if (message) {
+    shareStatusTimer = window.setTimeout(() => {
+      el.textContent = '';
+    }, 2400);
+  }
+}
+
+function applyHintVisibility() {
+  document.body.classList.toggle('hide-hints', !state.showHints);
+}
+
+function dismissSwipeCueOnHorizontalScroll() {
+  const scrollX = window.scrollX || document.documentElement.scrollLeft || document.body.scrollLeft || 0;
+  if (scrollX <= 12) return;
+
+  document.body.classList.add('swipe-cue-dismissed');
+  window.removeEventListener('scroll', dismissSwipeCueOnHorizontalScroll);
+}
+
+function validPasserSet(system, passers) {
+  const valid = new Set(availablePassers(system));
+  return new Set((Array.isArray(passers) ? passers : []).filter(id => valid.has(id)));
+}
+
+function applySharedPositions(positionPayload) {
+  if (!Array.isArray(positionPayload)) return;
+  for (let i = 0; i < state.rotations.length; i++) {
+    const rotationPositions = positionPayload[i];
+    if (!Array.isArray(rotationPositions)) continue;
+    const positions = state.rotations[i].positions;
+    POSITION_ZONES.forEach((zone, idx) => {
+      const pair = rotationPositions[idx];
+      if (!Array.isArray(pair) || pair.length !== 2) return;
+      const x = Number(pair[0]);
+      const y = Number(pair[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      positions[zone] = { x, y };
+    });
+    SR.clampToCourt(positions);
+  }
+}
+
+function loadSharedStateFromUrl() {
+  const hash = window.location.hash.replace(/^#/, '');
+  if (!hash.startsWith(SHARE_HASH_PREFIX)) return { loaded: false, positions: null };
+
+  try {
+    const payload = decodeSharePayload(hash.slice(SHARE_HASH_PREFIX.length));
+    const system = payload.system === '6-2' ? '6-2' : '5-1';
+    const passerCount = [2, 3, 4, 5].includes(+payload.passerCount)
+      ? +payload.passerCount
+      : 3;
+    const passers = validPasserSet(system, payload.passers);
+
+    state.system = system;
+    state.passerCount = passerCount;
+    state.passers = passers.size >= 2 ? passers : defaultPassers(system, passerCount);
+    state.playerLabels = {};
+    if (payload.labels && typeof payload.labels === 'object') {
+      for (const [id, value] of Object.entries(payload.labels)) {
+        if (SR.ROLES[id]) state.playerLabels[id] = String(value).slice(0, 10);
+      }
+    }
+
+    const display = payload.display || {};
+    state.showHints = display.hints !== false;
+    state.showBackrowMAsL = display.backrowMAsL !== false;
+    state.showSpotNumbers = display.spotNumbers === true;
+    return {
+      loaded: true,
+      positions: Array.isArray(payload.positions) ? payload.positions : null
+    };
+  } catch (_) {
+    setShareStatus('Could not load shared link.');
+    return { loaded: false, positions: null };
+  }
+}
+
+async function copyShareLink() {
+  syncShareUrl();
+  const href = window.location.href;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(href);
+    } else {
+      fallbackCopyText(href);
+    }
+    setShareStatus('Link copied.');
+  } catch (_) {
+    try {
+      fallbackCopyText(href);
+      setShareStatus('Link copied.');
+    } catch (err) {
+      setShareStatus('Copy failed. Select the address bar URL.');
+    }
+  }
+}
+
+function fallbackCopyText(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
 
 // All possible passer ids for each system. L is always available (libero).
 function availablePassers(system) {
@@ -15,11 +226,23 @@ function availablePassers(system) {
 
 // Default passers when system or count changes
 function defaultPassers(system, count) {
-  // Prefer L, then OHs, then other backrow players. Cap at count.
+  // Prefer L, then OHs, then OP before middles. Cap at count.
+  if (system === '5-1' && count === 5) {
+    // Six canonical ids produce five visible passers because L replaces one MB.
+    return new Set(['L', 'O1', 'O2', 'OP', 'M1', 'M2']);
+  }
   const order = system === '5-1'
-    ? ['L', 'O1', 'O2', 'M1', 'M2', 'OP', 'S']
+    ? ['L', 'O1', 'O2', 'OP', 'M1', 'M2', 'S']
     : ['L', 'O1', 'O2', 'M1', 'M2', 'S1', 'S2'];
   return new Set(order.slice(0, count));
+}
+
+function selectedPasserCount() {
+  const fiveOneAllNonSetters = state.system === '5-1'
+    && state.passerCount === 5
+    && ['L', 'O1', 'O2', 'OP', 'M1', 'M2'].every(id => state.passers.has(id))
+    && !state.passers.has('S');
+  return fiveOneAllNonSetters ? 5 : state.passers.size;
 }
 
 function setSystem(sys) {
@@ -37,10 +260,15 @@ function setSystem(sys) {
 
 function setPasserCount(n) {
   state.passerCount = n;
+  if (state.system === '5-1' && n === 5) {
+    state.passers = defaultPassers(state.system, n);
+    rebuildAll();
+    return;
+  }
   if (state.passers.size > n) {
     // trim from least-priority end
     const order = state.system === '5-1'
-      ? ['S', 'OP', 'M1', 'M2', 'O2', 'O1', 'L']
+      ? ['S', 'M1', 'M2', 'OP', 'O2', 'O1', 'L']
       : ['S1', 'S2', 'M1', 'M2', 'O2', 'O1', 'L'];
     const arr = [...state.passers];
     arr.sort((a, b) => order.indexOf(a) - order.indexOf(b));
@@ -48,7 +276,7 @@ function setPasserCount(n) {
   } else if (state.passers.size < n) {
     // top up with defaults not already in
     const order = state.system === '5-1'
-      ? ['L', 'O1', 'O2', 'M1', 'M2', 'OP', 'S']
+      ? ['L', 'O1', 'O2', 'OP', 'M1', 'M2', 'S']
       : ['L', 'O1', 'O2', 'M1', 'M2', 'S1', 'S2'];
     for (const p of order) {
       if (state.passers.size >= n) break;
@@ -60,31 +288,52 @@ function setPasserCount(n) {
 
 function togglePasser(id) {
   if (state.passers.has(id)) {
-    if (state.passers.size <= 2) return; // minimum 2 passers
+    if (state.passers.size <= 2) {
+      const replacement = replacementPasserFor(id);
+      if (!replacement) return; // minimum 2 passers
+      state.passers.delete(id);
+      state.passers.add(replacement);
+      rebuildAll();
+      return;
+    }
     state.passers.delete(id);
     state.passerCount = state.passers.size;
   } else {
     if (state.passers.size >= state.passerCount) {
-      // Remove the oldest non-libero passer to make room
-      for (const existing of state.passers) {
-        if (existing !== 'L') {
-          state.passers.delete(existing);
-          break;
-        }
-      }
+      state.passers.delete(passerToReplace(id));
     }
     state.passers.add(id);
   }
   rebuildAll();
 }
 
-function rebuildAll() {
+function replacementPasserFor(removedId) {
+  const order = state.system === '5-1'
+    ? ['O1', 'O2', 'L', 'OP', 'M1', 'M2', 'S']
+    : ['O1', 'O2', 'L', 'M1', 'M2', 'S1', 'S2'];
+  return order.find(p => p !== removedId && !state.passers.has(p)) || null;
+}
+
+function passerToReplace(incomingId) {
+  if (incomingId !== 'L' && state.passers.has('L')) return 'L';
+
+  for (const existing of state.passers) {
+    if (existing !== 'L') return existing;
+  }
+  return state.passers.values().next().value;
+}
+
+function rebuildAll(opts = {}) {
   state.rotations = [];
   for (let i = 0; i < 6; i++) {
-    state.rotations.push(SR.buildRotation(state.system, i, state.passers));
+    state.rotations.push(SR.buildRotation(state.system, i, state.passers, {
+      showBackrowMAsL: state.showBackrowMAsL
+    }));
   }
+  if (opts.positions) applySharedPositions(opts.positions);
   renderControls();
   renderCourts();
+  if (opts.sync !== false) scheduleShareUrlSync();
 }
 
 function renderControls() {
@@ -96,28 +345,90 @@ function renderControls() {
   document.querySelectorAll('#passer-count .seg-btn').forEach(b => {
     b.classList.toggle('active', +b.dataset.value === state.passerCount);
   });
-  // Passer checkboxes
+  renderPasserList();
+  renderRosterLabels();
+
+  const warn = document.getElementById('passer-warn');
+  const selectedCount = selectedPasserCount();
+  warn.textContent = selectedCount === state.passerCount
+    ? ''
+    : `Selected ${selectedCount} of ${state.passerCount}`;
+
+  document.getElementById('spot-numbers-toggle').checked = state.showSpotNumbers;
+  document.getElementById('hints-toggle').checked = state.showHints;
+  document.getElementById('backrow-m-as-l-toggle').checked = state.showBackrowMAsL;
+  applyHintVisibility();
+}
+
+function renderPasserList() {
   const list = document.getElementById('passer-list');
   list.innerHTML = '';
   for (const id of availablePassers(state.system)) {
     const el = document.createElement('div');
     el.className = 'passer-check';
+    el.dataset.roleId = id;
     if (state.passers.has(id)) el.classList.add('active');
-    el.textContent = id;
+
+    const code = document.createElement('span');
+    code.className = 'passer-code';
+    code.textContent = id;
+    el.appendChild(code);
+
+    if (hasCustomLabel(id)) {
+      const label = document.createElement('span');
+      label.className = 'passer-name';
+      label.textContent = customLabelFor(id);
+      el.appendChild(label);
+    }
+
     el.addEventListener('click', () => togglePasser(id));
     list.appendChild(el);
   }
-  const warn = document.getElementById('passer-warn');
-  warn.textContent = state.passers.size === state.passerCount
-    ? ''
-    : `Selected ${state.passers.size} of ${state.passerCount}`;
+}
+
+function renderRosterLabels() {
+  const roster = document.getElementById('roster-labels');
+  roster.innerHTML = '';
+  for (const id of availablePassers(state.system)) {
+    const row = document.createElement('label');
+    row.className = 'roster-row';
+
+    const role = SR.ROLES[id];
+    const code = document.createElement('span');
+    code.className = `roster-code ${role.cls}`;
+    code.textContent = id;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 10;
+    input.value = state.playerLabels[id] || '';
+    input.placeholder = role.tag;
+    input.setAttribute('aria-label', `Custom label for ${role.tag}`);
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.addEventListener('input', () => {
+      state.playerLabels[id] = input.value;
+      renderPasserList();
+      renderCourts();
+      scheduleShareUrlSync();
+    });
+
+    row.appendChild(code);
+    row.appendChild(input);
+    roster.appendChild(row);
+  }
 }
 
 function renderCourts() {
   const grid = document.getElementById('courts-grid');
   grid.innerHTML = '';
   for (const rot of state.rotations) {
-    Court.renderCourtCard(grid, rot, { passerSet: state.passers });
+    Court.renderCourtCard(grid, rot, {
+      passerSet: state.passers,
+      showSpotNumbers: state.showSpotNumbers,
+      playerLabels: state.playerLabels,
+      onPositionsChange: scheduleShareUrlSync
+    });
   }
 }
 
@@ -160,7 +471,7 @@ function bakeStyles(clone, original) {
   const cloneNodes = clone.querySelectorAll('*');
   for (let i = 0; i < origNodes.length; i++) {
     const cs = getComputedStyle(origNodes[i]);
-    const props = ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'font-size', 'font-weight', 'text-anchor', 'dominant-baseline'];
+    const props = ['display', 'fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'font-size', 'font-weight', 'text-anchor', 'dominant-baseline'];
     let style = '';
     for (const p of props) {
       const v = cs.getPropertyValue(p);
@@ -190,7 +501,8 @@ async function exportPNG() {
   for (const card of cards) {
     const svgEl = card.querySelector('svg');
     const title = card.querySelector('.court-title').textContent;
-    const sub = card.querySelector('.court-sub').textContent;
+    const subEl = card.querySelector('.court-sub');
+    const sub = subEl ? subEl.textContent : '';
     const url = await svgToPngDataUrl(svgEl, 1.5);
     cells.push({ url, title, sub });
   }
@@ -209,7 +521,7 @@ async function exportPNG() {
   ctx.fillText('Serve Receive Builder', pad, pad + 24);
   ctx.fillStyle = '#8b949e';
   ctx.font = '14px -apple-system, BlinkMacSystemFont, sans-serif';
-  ctx.fillText(`System: ${state.system}    Passers: ${[...state.passers].join(', ')}`, pad, pad + 44);
+  ctx.fillText(`System: ${state.system}    Passers: ${playerSummary([...state.passers])}`, pad, pad + 44);
 
   for (let i = 0; i < cells.length; i++) {
     const r = Math.floor(i / cols);
@@ -241,7 +553,8 @@ async function exportPDF() {
   for (const card of cards) {
     const svgEl = card.querySelector('svg');
     const title = card.querySelector('.court-title').textContent;
-    const sub = card.querySelector('.court-sub').textContent;
+    const subEl = card.querySelector('.court-sub');
+    const sub = subEl ? subEl.textContent : '';
     const url = await svgToPngDataUrl(svgEl, 2);
     cells.push({ url, title, sub });
   }
@@ -258,7 +571,7 @@ async function exportPDF() {
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(10);
   pdf.setTextColor(139, 148, 158);
-  pdf.text(`System: ${state.system}    Passers: ${[...state.passers].join(', ')}`, pad, pad + 22);
+  pdf.text(`System: ${state.system}    Passers: ${playerSummary([...state.passers])}`, pad, pad + 22);
 
   const cols = 3, rows = 2;
   const headerH = 22;
@@ -309,16 +622,36 @@ function init() {
   });
   document.getElementById('export-png').addEventListener('click', exportPNG);
   document.getElementById('export-pdf').addEventListener('click', exportPDF);
-  document.getElementById('reset-btn').addEventListener('click', rebuildAll);
+  document.getElementById('reset-btn').addEventListener('click', () => rebuildAll());
+  document.getElementById('copy-share-link').addEventListener('click', copyShareLink);
+  window.addEventListener('scroll', dismissSwipeCueOnHorizontalScroll, { passive: true });
 
   const hintsBox = document.getElementById('hints-toggle');
-  const applyHints = () => document.body.classList.toggle('hide-hints', !hintsBox.checked);
-  hintsBox.addEventListener('change', applyHints);
-  applyHints();
+  hintsBox.addEventListener('change', () => {
+    state.showHints = hintsBox.checked;
+    applyHintVisibility();
+    scheduleShareUrlSync();
+  });
 
-  // Initial defaults
-  state.passers = defaultPassers(state.system, state.passerCount);
-  rebuildAll();
+  const spotNumbersBox = document.getElementById('spot-numbers-toggle');
+  spotNumbersBox.addEventListener('change', () => {
+    state.showSpotNumbers = spotNumbersBox.checked;
+    renderCourts();
+    scheduleShareUrlSync();
+  });
+
+  const backrowMAsLBox = document.getElementById('backrow-m-as-l-toggle');
+  backrowMAsLBox.addEventListener('change', () => {
+    state.showBackrowMAsL = backrowMAsLBox.checked;
+    rebuildAll();
+  });
+
+  const sharedState = loadSharedStateFromUrl();
+  if (!sharedState.loaded) {
+    state.passers = defaultPassers(state.system, state.passerCount);
+  }
+  rebuildAll({ positions: sharedState.positions, sync: false });
+  syncShareUrl();
 }
 
 document.addEventListener('DOMContentLoaded', init);

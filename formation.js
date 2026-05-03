@@ -68,13 +68,14 @@ const ZONE_GEOM = {
 
 // Apply libero swap: L replaces whichever MB is in back row.
 // Returns { zoneToPlayer, players: [{id, zone, role, isLibero}] }
-function applyLibero(lineup) {
+function applyLibero(lineup, showBackrowMAsL = true) {
   const zoneToPlayer = { ...lineup };
   for (const z of [1, 5, 6]) {
     const pos = zoneToPlayer[z];
     if (pos === 'M1' || pos === 'M2') {
-      // Track that L replaces this MB; we display L on court.
-      zoneToPlayer[z] = `L:${pos}`; // L replacing MBx; we'll render label "L"
+      // Track the libero slot. When hidden, display the middle while keeping
+      // L as an eligible passer for placement.
+      zoneToPlayer[z] = showBackrowMAsL ? `L:${pos}` : `${pos}:L`;
     }
   }
   return zoneToPlayer;
@@ -84,9 +85,17 @@ function applyLibero(lineup) {
 // e.g. "L:M1" means libero in for M1.
 function occupantInfo(occ) {
   if (occ.startsWith('L:')) {
-    return { id: 'L', replacedRole: occ.slice(2), display: 'L' };
+    return { id: 'L', replacedRole: occ.slice(2), display: 'L', liberoSlot: true };
   }
-  return { id: occ, replacedRole: null, display: occ };
+  if (occ.endsWith(':L')) {
+    const id = occ.slice(0, -2);
+    return { id, replacedRole: null, display: id, liberoSlot: true };
+  }
+  return { id: occ, replacedRole: null, display: occ, liberoSlot: false };
+}
+
+function isSelectedPasser(occ, passerSet) {
+  return passerSet.has(occ.id) || (occ.liberoSlot && passerSet.has('L'));
 }
 
 // Determine setter info: who sets this rotation.
@@ -111,7 +120,8 @@ function setterFor(system, lineup) {
 function onCourtIds(zoneToPlayerWithLibero) {
   const ids = [];
   for (const occ of Object.values(zoneToPlayerWithLibero)) {
-    ids.push(occupantInfo(occ).id);
+    const info = occupantInfo(occ);
+    ids.push(info.liberoSlot ? 'L' : info.id);
   }
   return ids;
 }
@@ -129,14 +139,24 @@ function autoPlace(zoneToPlayerWithLibero, passerSet, system, setter) {
 
   const positions = {};
 
-  // ----- Step 1: passers ~3/4 back (y=6.5), evenly distributed across width.
+  // ----- Step 1: passers ~3/4 back (y=6.5), distributed across width.
   const passerZones = [];
   for (const z of [1,2,3,4,5,6]) {
-    if (passerSet.has(occByZone[z].id)) passerZones.push(z);
+    if (isSelectedPasser(occByZone[z], passerSet)) passerZones.push(z);
   }
-  // Order passers left-to-right by their natural court column so the W-formation visually
-  // matches who would naturally cover that area.
+  const N = passerZones.length;
+  const isFrontRowHitterPasser = (z) => {
+    const id = occByZone[z].id;
+    return N === 3 && ZONE_GEOM[z].row === 'F' && id !== 'L' && !id.startsWith('S');
+  };
+  // Order passers left-to-right. In three-passer receive, a front-row hitter
+  // passer gets left-side priority so their release path stays hitter-friendly.
+  // Otherwise, natural court column determines the visual receive lane.
   const passerOrdered = passerZones.slice().sort((a, b) => {
+    const aFrontHitter = isFrontRowHitterPasser(a);
+    const bFrontHitter = isFrontRowHitterPasser(b);
+    if (aFrontHitter !== bFrontHitter) return aFrontHitter ? -1 : 1;
+
     const colOrder = { L: 0, C: 1, R: 2 };
     const ga = ZONE_GEOM[a], gb = ZONE_GEOM[b];
     if (colOrder[ga.col] !== colOrder[gb.col]) return colOrder[ga.col] - colOrder[gb.col];
@@ -144,63 +164,194 @@ function autoPlace(zoneToPlayerWithLibero, passerSet, system, setter) {
     return ga.row === 'F' ? -1 : 1;
   });
 
-  const N = passerOrdered.length;
   const passLineY = 6.5;
-  for (let i = 0; i < N; i++) {
-    const z = passerOrdered[i];
-    const x = ((i + 1) / (N + 1)) * COURT_W;
-    // Stagger: front-row passers tucked slightly forward so column-pair overlap
-    // (front-y < back-y) is satisfied when the same column has both a front and back passer.
-    const dy = ZONE_GEOM[z].row === 'F' ? -0.6 : 0;
-    positions[z] = { x, y: passLineY + dy };
+  const rowGap = MIN_GAP + 0.05;
+  const frontRowHitterPasserZone = passerOrdered.find(isFrontRowHitterPasser) || null;
+  const frontRowPasserOffset = rowGap;
+
+  if (N === 5) {
+    const frontSlots = [
+      { x: COURT_W * 0.20, y: ATTACK_LINE },
+      { x: COURT_W * 0.50, y: ATTACK_LINE },
+      { x: COURT_W * 0.80, y: ATTACK_LINE }
+    ];
+    const backSlots = [
+      { x: (frontSlots[0].x + frontSlots[1].x) / 2, y: passLineY },
+      { x: (frontSlots[1].x + frontSlots[2].x) / 2, y: passLineY }
+    ];
+    const frontOrder = new Map([[4, 0], [3, 1], [2, 2]]);
+    const backOrder = new Map([[5, 0], [6, 1], [1, 2]]);
+    const frontPassers = passerZones
+      .filter(z => ZONE_GEOM[z].row === 'F')
+      .sort((a, b) => frontOrder.get(a) - frontOrder.get(b));
+    const backPassers = passerZones
+      .filter(z => ZONE_GEOM[z].row === 'B')
+      .sort((a, b) => backOrder.get(a) - backOrder.get(b));
+    const frontLineZones = frontPassers.slice();
+    const promotedBackZones = [];
+
+    while (frontLineZones.length < 3 && backPassers.length > promotedBackZones.length) {
+      const z = backPassers[backPassers.length - promotedBackZones.length - 1];
+      promotedBackZones.unshift(z);
+      frontLineZones.push(z);
+    }
+
+    const promotedBackSet = new Set(promotedBackZones);
+    const backLineZones = backPassers.filter(z => !promotedBackSet.has(z));
+
+    frontLineZones.slice(0, 3).forEach((z, i) => {
+      positions[z] = {
+        x: frontSlots[i].x,
+        y: ZONE_GEOM[z].row === 'F' ? frontSlots[i].y : frontSlots[i].y + rowGap
+      };
+    });
+    backLineZones.slice(0, 2).forEach((z, i) => {
+      positions[z] = { ...backSlots[i] };
+    });
+  } else {
+    for (let i = 0; i < N; i++) {
+      const z = passerOrdered[i];
+      const x = ((i + 1) / (N + 1)) * COURT_W;
+      // Keep passer lanes even; only nudge front-row passers forward enough
+      // to preserve front/back overlap legality when needed.
+      const dy = ZONE_GEOM[z].row === 'F' ? -frontRowPasserOffset : 0;
+      positions[z] = { x, y: passLineY + dy };
+    }
   }
 
-  // ----- Step 2: front-row players (non-passer, non-setter attackers, plus the front-row
-  // setter if there is one). Each stands at their zone-default column at the net — they'll
-  // run to their actual attack column AFTER the serve. Pre-serve they hold their zone.
+  // ----- Step 2: front-row players. Passers keep their receive lanes. A front-row
+  // setter starts at the front-center target, and adjacent front-row players adjust
+  // around them as overlap rules require.
   const setterZone = setter.setterZone;
   const isFrontSetter = ZONE_GEOM[setterZone].row === 'F';
+  const frontRowOrder = [4, 3, 2];
+  const frontRowHitterPasserIdx = frontRowOrder.indexOf(frontRowHitterPasserZone);
+  const frontRowHitterPasserX = frontRowHitterPasserZone
+    ? positions[frontRowHitterPasserZone].x
+    : null;
+
+  function adjustFrontRowX(z, tx) {
+    if (frontRowHitterPasserIdx === -1) return tx;
+    const idx = frontRowOrder.indexOf(z);
+    if (idx === -1 || idx === frontRowHitterPasserIdx) return tx;
+
+    const spacing = 0.75;
+    const requiredX = frontRowHitterPasserX + (idx - frontRowHitterPasserIdx) * spacing;
+    return idx < frontRowHitterPasserIdx
+      ? Math.min(tx, requiredX)
+      : Math.max(tx, requiredX);
+  }
+
+  function isPriorityFixed(z) {
+    return positions[z] && (isSelectedPasser(occByZone[z], passerSet) || z === setterZone);
+  }
+
+  function pushRoleRightInRow(rowOrder, roleId) {
+    if ([...Object.values(occByZone)].some(occ => occ.id === roleId && isSelectedPasser(occ, passerSet))) return;
+
+    const roleZone = rowOrder.find(z => positions[z] && occByZone[z].id === roleId);
+    if (!roleZone) return;
+
+    const roleIdx = rowOrder.indexOf(roleZone);
+    const courtMinX = PLAYER_R + 0.05;
+    const courtMaxX = COURT_W - PLAYER_R - 0.05;
+    let minX = courtMinX + roleIdx * rowGap;
+    let maxX = courtMaxX - (rowOrder.length - 1 - roleIdx) * rowGap;
+
+    for (let i = 0; i < roleIdx; i++) {
+      const z = rowOrder[i];
+      if (isPriorityFixed(z)) {
+        minX = Math.max(minX, positions[z].x + (roleIdx - i) * rowGap);
+      }
+    }
+    for (let i = roleIdx + 1; i < rowOrder.length; i++) {
+      const z = rowOrder[i];
+      if (isPriorityFixed(z)) {
+        maxX = Math.min(maxX, positions[z].x - (i - roleIdx) * rowGap);
+      }
+    }
+
+    const roleX = maxX >= minX ? maxX : Math.max(courtMinX, Math.min(courtMaxX, maxX));
+    positions[roleZone].x = roleX;
+
+    for (let i = roleIdx + 1; i < rowOrder.length; i++) {
+      const z = rowOrder[i];
+      if (isPriorityFixed(z)) continue;
+      positions[z].x = positions[rowOrder[i - 1]].x + rowGap;
+    }
+    for (let i = roleIdx - 1; i >= 0; i--) {
+      const z = rowOrder[i];
+      if (isPriorityFixed(z)) continue;
+      positions[z].x = positions[rowOrder[i + 1]].x - rowGap;
+    }
+  }
 
   for (const z of [4, 3, 2]) {
     if (positions[z]) continue; // already a passer
+    let tx, ty;
     if (z === setterZone && isFrontSetter) {
-      // 5-1 front-row setter — at net, biased right of center toward the set target
-      if (z === 2)      positions[z] = { x: 6.5, y: 0.9 };
-      else if (z === 3) positions[z] = { x: 5.5, y: 0.9 };
-      else              positions[z] = { x: 3.0, y: 0.9 }; // z4
+      tx = COURT_W / 2;
+      ty = 0.9;
     } else {
       // Zone-default attack stance — column position at the net
       const col = ZONE_GEOM[z].col;
-      const tx = col === 'L' ? 1.5 : col === 'C' ? 4.5 : 7.5;
-      positions[z] = { x: tx, y: 1.2 };
+      tx = col === 'L' ? 1.5 : col === 'C' ? 4.5 : 7.5;
+      ty = 1.2;
     }
+    positions[z] = { x: adjustFrontRowX(z, tx), y: ty };
+  }
+  pushRoleRightInRow(frontRowOrder, 'OP');
+  if (isFrontSetter && positions[setterZone]) {
+    const setterIdx = frontRowOrder.indexOf(setterZone);
+    let minX = PLAYER_R + 0.05;
+    let maxX = COURT_W - PLAYER_R - 0.05;
+
+    for (let i = 0; i < setterIdx; i++) {
+      const z = frontRowOrder[i];
+      if (positions[z]) minX = Math.max(minX, positions[z].x + (setterIdx - i) * rowGap);
+    }
+    for (let i = setterIdx + 1; i < frontRowOrder.length; i++) {
+      const z = frontRowOrder[i];
+      if (positions[z]) maxX = Math.min(maxX, positions[z].x - (i - setterIdx) * rowGap);
+    }
+
+    positions[setterZone].x = minX <= maxX
+      ? Math.max(minX, Math.min(maxX, COURT_W / 2))
+      : Math.max(PLAYER_R + 0.05, Math.min(COURT_W - PLAYER_R - 0.05, minX));
   }
 
-  // ----- Step 3: back-row setter — first principles: as close to the net as overlap
-  // allows, sitting just behind the column-adjacent front-row player (z1 behind z2,
-  // z6 behind z3, z5 behind z4).
-  //
-  // Two cases for horizontal position:
-  //   (a) The column-front player is an ATTACKER at the net: the setter sits at the
-  //       same x, right behind them. They release a short distance to the set target.
-  //   (b) The column-front player is a PASSER (peeled back to the receive line): the
-  //       setter would otherwise be stuck at mid-back-court behind them. To keep the
-  //       setter OUT of the middle of the court (so their route to the net target
-  //       comes down a sideline), bias the setter toward the closer sideline.
+  // ----- Step 3: back-row setter — get as close to front-center as overlap allows.
+  // The y position is bounded by their adjacent front-row player. The x position is
+  // bounded only by adjacent back-row players, so the setter can slide toward center.
   if (!isFrontSetter && !positions[setterZone]) {
     const colFront = setterZone === 1 ? 2 : setterZone === 6 ? 3 : 4;
-    const refOcc = occByZone[colFront];
-    const refIsPasser = passerSet.has(refOcc.id);
     const ref = positions[colFront];
-    let tx;
-    if (refIsPasser) {
-      if (setterZone === 1)      tx = 7.5;       // back-right: hug the right sideline
-      else if (setterZone === 5) tx = 1.5;       // back-left: hug the left sideline
-      else                       tx = 7.0;       // z6: bias right toward z1 (overlap will relax)
-    } else {
-      tx = ref.x;
+    const backRowOrder = [5, 6, 1];
+    const idx = backRowOrder.indexOf(setterZone);
+    let minX = PLAYER_R + 0.05;
+    let maxX = COURT_W - PLAYER_R - 0.05;
+    const leftNeighbor = backRowOrder[idx - 1];
+    const rightNeighbor = backRowOrder[idx + 1];
+
+    if (leftNeighbor && positions[leftNeighbor]) {
+      minX = positions[leftNeighbor].x + rowGap;
     }
-    positions[setterZone] = { x: tx, y: ref.y + 0.5 };
+    if (rightNeighbor && positions[rightNeighbor]) {
+      maxX = positions[rightNeighbor].x - rowGap;
+    }
+
+    if (N === 2 && setterZone === 1) {
+      const rightmostPasserX = Math.max(...passerOrdered.map(z => positions[z].x));
+      minX = Math.max(minX, rightmostPasserX + PLAYER_R * 2 + 0.15);
+    }
+    if (N >= 4 && setterZone === 1 && positions[colFront]) {
+      minX = Math.max(minX, positions[colFront].x + rowGap);
+    }
+
+    const tx = minX <= maxX
+      ? Math.max(minX, Math.min(maxX, COURT_W / 2))
+      : COURT_W / 2;
+    positions[setterZone] = { x: tx, y: ref.y + rowGap };
   }
 
   // ----- Step 4: back-row non-passer, non-setter — tuck deep at their zone-column.
@@ -210,6 +361,7 @@ function autoPlace(zoneToPlayerWithLibero, passerSet, system, setter) {
     const tx = col === 'L' ? 1.5 : col === 'C' ? 4.5 : 7.5;
     positions[z] = { x: tx, y: 7.8 };
   }
+  pushRoleRightInRow([5, 6, 1], 'OP');
 
   // ----- Step 5: enforce overlap, anchoring passers (so the receive formation stays
   // intact) and the front-row setter (5-1 only — they're already at the set target).
@@ -310,10 +462,10 @@ function validateOverlap(positions) {
 }
 
 // Build full per-rotation data including setter info, occupants, positions.
-function buildRotation(system, rotationIdx, passerSet) {
+function buildRotation(system, rotationIdx, passerSet, opts = {}) {
   const lineup = lineupFor(system, rotationIdx);
   const setter = setterFor(system, lineup);
-  const lineupL = applyLibero(lineup);
+  const lineupL = applyLibero(lineup, opts.showBackrowMAsL !== false);
   const positions = autoPlace(lineupL, passerSet, system, setter);
   return { rotationIdx, lineup, lineupL, setter, positions };
 }
@@ -321,6 +473,6 @@ function buildRotation(system, rotationIdx, passerSet) {
 window.SR = {
   ROLES, COURT_W, COURT_D, ATTACK_LINE, PLAYER_R,
   baseLineup, lineupFor, applyLibero, occupantInfo, setterFor,
-  onCourtIds, autoPlace, enforceOverlap, validateOverlap,
+  isSelectedPasser, onCourtIds, autoPlace, enforceOverlap, validateOverlap,
   clampToCourt, buildRotation, ZONE_GEOM
 };
