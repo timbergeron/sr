@@ -461,11 +461,13 @@ body.swipe-cue-dismissed .mobile-swipe-cue {
   cursor: grab;
   outline: none;
 }
-.court-card.zone-view .player {
+.court-card.zone-view .player,
+.court-card.zone-view-animating .player {
   cursor: default;
 }
 .player:active { cursor: grabbing; }
-.court-card.zone-view .player:active { cursor: default; }
+.court-card.zone-view .player:active,
+.court-card.zone-view-animating .player:active { cursor: default; }
 .player .chip {
   stroke: rgba(0,0,0,0.6);
   stroke-width: 0.04;

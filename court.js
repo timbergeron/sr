@@ -2,6 +2,7 @@
 
 const NS = 'http://www.w3.org/2000/svg';
 const VIEW_PAD = 0.6; // padding around court for net band, labels
+const ZONE_VIEW_ANIMATION_MS = 650;
 const ZONE_CENTERS = {
   4: { x: 1.5, y: 1.5 },
   3: { x: 4.5, y: 1.5 },
@@ -10,6 +11,7 @@ const ZONE_CENTERS = {
   6: { x: 4.5, y: 6.0 },
   1: { x: 7.5, y: 6.0 }
 };
+const playerAnimations = new WeakMap();
 
 function svg(tag, attrs = {}, parent = null) {
   const el = document.createElementNS(NS, tag);
@@ -64,10 +66,22 @@ function renderCourtCard(container, rotationData, opts) {
   }
 
   zoneViewToggle.input.addEventListener('change', () => {
+    const animationToken = (viewState.animationToken || 0) + 1;
+    viewState.animationToken = animationToken;
+    viewState.zoneViewAnimating = true;
     viewState.zoneView = zoneViewToggle.input.checked;
     card.classList.toggle('zone-view', viewState.zoneView);
+    card.classList.add('zone-view-animating');
     hideOverlapTooltip(tooltip, hintState);
-    updatePlayerPositions(playerEls, currentCourtPositions(rotationData, viewState));
+    updatePlayerPositions(playerEls, currentCourtPositions(rotationData, viewState), {
+      animate: true,
+      duration: ZONE_VIEW_ANIMATION_MS,
+      onComplete: () => {
+        if (viewState.animationToken !== animationToken) return;
+        viewState.zoneViewAnimating = false;
+        card.classList.remove('zone-view-animating');
+      }
+    });
   });
 
   attachOverlapTooltips(card, playerEls, rotationData, tooltip, hintState, viewState, opts.playerLabels || {});
@@ -112,6 +126,11 @@ function zoneCenterPositions() {
 
 function currentCourtPositions(rotationData, viewState) {
   return viewState.zoneView ? zoneCenterPositions() : rotationData.positions;
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 function drawCourt(root, opts = {}) {
@@ -188,6 +207,7 @@ function renderPlayer(parent, zone, occ, pos, opts) {
     'aria-label': `${playerTitle(occ.id, playerLabels)} zone ${zone}`,
     transform: `translate(${pos.x}, ${pos.y})`
   }, parent);
+  setPlayerTransform(g, pos);
 
   // Passer ring (drawn behind chip)
   const isPasser = SR.isSelectedPasser(occ, opts.passerSet);
@@ -491,7 +511,7 @@ function attachDrag(root, playerEls, rotationData, hintState, opts, tooltip, vie
   for (const [zStr, g] of Object.entries(playerEls)) {
     const zone = parseInt(zStr, 10);
     g.addEventListener('pointerdown', (e) => {
-      if (viewState.zoneView) return;
+      if (viewState.zoneView || viewState.zoneViewAnimating) return;
       e.preventDefault();
       hideOverlapTooltip(tooltip, hintState);
       g.setPointerCapture(e.pointerId);
@@ -527,12 +547,112 @@ function attachDrag(root, playerEls, rotationData, hintState, opts, tooltip, vie
   }
 }
 
-function updatePlayerPositions(playerEls, positions) {
-  for (const [zStr, g] of Object.entries(playerEls)) {
+function updatePlayerPositions(playerEls, positions, opts = {}) {
+  const shouldAnimate = opts.animate && !prefersReducedMotion();
+  const entries = Object.entries(playerEls).filter(([zStr]) => {
+    const z = parseInt(zStr, 10);
+    return Boolean(positions[z]);
+  });
+
+  if (!entries.length) {
+    if (opts.onComplete) opts.onComplete();
+    return;
+  }
+
+  let remaining = entries.length;
+  const done = () => {
+    remaining -= 1;
+    if (remaining === 0 && opts.onComplete) opts.onComplete();
+  };
+
+  for (const [zStr, g] of entries) {
     const z = parseInt(zStr, 10);
     const p = positions[z];
-    if (p) g.setAttribute('transform', `translate(${p.x}, ${p.y})`);
+    if (shouldAnimate) {
+      animatePlayerTo(g, p, {
+        duration: opts.duration || ZONE_VIEW_ANIMATION_MS,
+        onComplete: done
+      });
+    } else {
+      cancelPlayerAnimation(g);
+      setPlayerTransform(g, p);
+      done();
+    }
   }
+}
+
+function setPlayerTransform(g, p) {
+  g.setAttribute('transform', `translate(${p.x}, ${p.y})`);
+  g.setAttribute('data-x', p.x);
+  g.setAttribute('data-y', p.y);
+}
+
+function currentPlayerTransform(g) {
+  const rawX = g.getAttribute('data-x');
+  const rawY = g.getAttribute('data-y');
+  const x = rawX === null ? NaN : Number(rawX);
+  const y = rawY === null ? NaN : Number(rawY);
+  if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+
+  const match = (g.getAttribute('transform') || '').match(/translate\(\s*([-+]?\d*\.?\d+)\s*[, ]\s*([-+]?\d*\.?\d+)\s*\)/);
+  if (!match) return null;
+  return { x: Number(match[1]), y: Number(match[2]) };
+}
+
+function cancelPlayerAnimation(g) {
+  const animation = playerAnimations.get(g);
+  if (!animation) return;
+  cancelAnimationFrame(animation.frameId);
+  playerAnimations.delete(g);
+  g.classList.remove('is-animating');
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5
+    ? 4 * t * t * t
+    : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function animatePlayerTo(g, target, opts = {}) {
+  const from = currentPlayerTransform(g) || target;
+  const dx = target.x - from.x;
+  const dy = target.y - from.y;
+  const distance = Math.hypot(dx, dy);
+
+  cancelPlayerAnimation(g);
+
+  if (distance < 0.001) {
+    setPlayerTransform(g, target);
+    if (opts.onComplete) opts.onComplete();
+    return;
+  }
+
+  const duration = Math.max(120, opts.duration || ZONE_VIEW_ANIMATION_MS);
+  const startedAt = performance.now();
+  const animation = { frameId: 0 };
+  g.classList.add('is-animating');
+
+  const step = (now) => {
+    const t = Math.min(1, (now - startedAt) / duration);
+    const eased = easeInOutCubic(t);
+    setPlayerTransform(g, {
+      x: from.x + dx * eased,
+      y: from.y + dy * eased
+    });
+
+    if (t < 1) {
+      animation.frameId = requestAnimationFrame(step);
+      return;
+    }
+
+    setPlayerTransform(g, target);
+    playerAnimations.delete(g);
+    g.classList.remove('is-animating');
+    if (opts.onComplete) opts.onComplete();
+  };
+
+  animation.frameId = requestAnimationFrame(step);
+  playerAnimations.set(g, animation);
 }
 
 window.Court = { renderCourtCard, updatePlayerPositions };
