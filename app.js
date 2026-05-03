@@ -2,9 +2,11 @@
 
 const SHARE_HASH_PREFIX = 'sr=';
 const SHARE_VERSION = 1;
+const SHARE_COPY_CONFIRMATION = 'Copied. Includes current positions, labels, passers, and display options.';
 const POSITION_ZONES = [1, 2, 3, 4, 5, 6];
 let shareSyncTimer = null;
 let shareStatusTimer = null;
+let shareQrRenderToken = 0;
 
 const state = {
   system: '5-1',          // '5-1' or '6-2'
@@ -91,11 +93,17 @@ function shareHash() {
   return SHARE_HASH_PREFIX + encodeSharePayload(buildSharePayload());
 }
 
-function syncShareUrl() {
-  if (!state.rotations.length) return;
+function currentShareHref() {
   const url = new URL(window.location.href);
   url.hash = shareHash();
-  window.history.replaceState(null, '', url);
+  return url.href;
+}
+
+function syncShareUrl() {
+  if (!state.rotations.length) return;
+  const href = currentShareHref();
+  window.history.replaceState(null, '', href);
+  refreshShareQrIfOpen(href);
 }
 
 function scheduleShareUrlSync() {
@@ -103,15 +111,15 @@ function scheduleShareUrlSync() {
   shareSyncTimer = window.setTimeout(syncShareUrl, 200);
 }
 
-function setShareStatus(message) {
+function setShareStatus(message, duration = 2400) {
   const el = document.getElementById('share-status');
   if (!el) return;
   el.textContent = message;
   window.clearTimeout(shareStatusTimer);
-  if (message) {
+  if (message && duration > 0) {
     shareStatusTimer = window.setTimeout(() => {
       el.textContent = '';
-    }, 2400);
+    }, duration);
   }
 }
 
@@ -187,19 +195,18 @@ function loadSharedStateFromUrl() {
 }
 
 async function copyShareLink() {
-  syncShareUrl();
-  const href = window.location.href;
+  const href = currentShareHref();
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(href);
     } else {
       fallbackCopyText(href);
     }
-    setShareStatus('Link copied.');
+    setShareStatus(SHARE_COPY_CONFIRMATION, 4200);
   } catch (_) {
     try {
       fallbackCopyText(href);
-      setShareStatus('Link copied.');
+      setShareStatus(SHARE_COPY_CONFIRMATION, 4200);
     } catch (err) {
       setShareStatus('Copy failed. Select the address bar URL.');
     }
@@ -216,6 +223,74 @@ function fallbackCopyText(text) {
   textarea.select();
   document.execCommand('copy');
   document.body.removeChild(textarea);
+}
+
+function shareQrElements() {
+  return {
+    trigger: document.getElementById('share-qr'),
+    popover: document.getElementById('share-qr-popover'),
+    shell: document.getElementById('share-qr-canvas-shell'),
+    status: document.getElementById('share-qr-status')
+  };
+}
+
+function closeShareQr() {
+  const { trigger, popover } = shareQrElements();
+  if (!popover) return;
+  popover.hidden = true;
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+}
+
+function refreshShareQrIfOpen(href = window.location.href) {
+  const { popover } = shareQrElements();
+  if (!popover || popover.hidden) return;
+  renderShareQr(href);
+}
+
+function toggleShareQr() {
+  const { popover } = shareQrElements();
+  if (!popover || popover.hidden) {
+    renderShareQr(currentShareHref());
+    return;
+  }
+  closeShareQr();
+}
+
+async function renderShareQr(href) {
+  const { trigger, popover, shell, status } = shareQrElements();
+  if (!popover || !shell || !status) return;
+
+  const token = ++shareQrRenderToken;
+  popover.hidden = false;
+  if (trigger) trigger.setAttribute('aria-expanded', 'true');
+  status.textContent = 'Generating QR...';
+  shell.hidden = false;
+
+  if (typeof window.QRCode !== 'function') {
+    shell.hidden = true;
+    status.textContent = 'QR generator unavailable. Copy link instead.';
+    return;
+  }
+
+  try {
+    shell.textContent = '';
+    new window.QRCode(shell, {
+      text: href,
+      width: 184,
+      height: 184,
+      colorDark: '#0e1116',
+      colorLight: '#ffffff',
+      correctLevel: window.QRCode.CorrectLevel.M
+    });
+    if (token !== shareQrRenderToken) return;
+    shell.hidden = false;
+    status.textContent = 'Scan to open this setup.';
+  } catch (_) {
+    if (token !== shareQrRenderToken) return;
+    shell.textContent = '';
+    shell.hidden = true;
+    status.textContent = 'Link is too large for QR. Copy link instead.';
+  }
 }
 
 // All possible passer ids for each system. L is always available (libero).
@@ -625,6 +700,11 @@ function init() {
   document.getElementById('export-pdf').addEventListener('click', exportPDF);
   document.getElementById('reset-btn').addEventListener('click', () => rebuildAll());
   document.getElementById('copy-share-link').addEventListener('click', copyShareLink);
+  document.getElementById('share-qr').addEventListener('click', toggleShareQr);
+  document.getElementById('share-qr-close').addEventListener('click', closeShareQr);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeShareQr();
+  });
   window.addEventListener('scroll', dismissSwipeCueOnHorizontalScroll, { passive: true });
 
   const hintsBox = document.getElementById('hints-toggle');
@@ -652,7 +732,6 @@ function init() {
     state.passers = defaultPassers(state.system, state.passerCount);
   }
   rebuildAll({ positions: sharedState.positions, sync: false });
-  syncShareUrl();
 }
 
 document.addEventListener('DOMContentLoaded', init);

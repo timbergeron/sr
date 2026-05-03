@@ -230,22 +230,88 @@ html, body {
 }
 .btn:hover { border-color: var(--accent-2); }
 .btn.ghost { background: transparent; }
+.btn.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+}
 .export-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .share-row {
   display: flex;
   gap: 6px;
 }
-.share-row .btn {
-  width: 100%;
+.share-row #copy-share-link {
+  flex: 1;
 }
 .share-status {
-  min-height: 16px;
+  min-height: 28px;
   margin-top: 7px;
   color: var(--text-dim);
   font-size: 11px;
+  line-height: 1.25;
+}
+.share-status:empty {
+  min-height: 8px;
+  margin-top: 2px;
 }
 .share-hint {
   margin: 7px 0 0 0;
+}
+.qr-popover {
+  display: grid;
+  gap: 9px;
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.qr-popover[hidden],
+.qr-canvas-shell[hidden] {
+  display: none;
+}
+.qr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.qr-close {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  color: var(--text-dim);
+  background: transparent;
+}
+.qr-canvas-shell {
+  justify-self: center;
+  padding: 8px;
+  background: #ffffff;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px rgba(14, 17, 22, 0.08);
+}
+.qr-canvas-shell canvas,
+.qr-canvas-shell img,
+.qr-canvas-shell svg,
+.qr-canvas-shell table {
+  display: block;
+  width: 184px;
+  height: 184px;
+}
+.qr-status {
+  min-height: 14px;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: center;
 }
 
 /* Toggle row */

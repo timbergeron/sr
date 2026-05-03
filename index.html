@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="styles.css" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="qrcode.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -66,9 +67,23 @@
       <h2>Share</h2>
       <div class="share-row">
         <button class="btn" id="copy-share-link">Copy Link</button>
+        <button class="btn icon-btn" id="share-qr" type="button" aria-label="Show QR code" aria-controls="share-qr-popover" aria-expanded="false" title="Show QR code">
+          <i class="fa-solid fa-qrcode" aria-hidden="true"></i>
+        </button>
       </div>
       <p class="hint share-hint">Includes current positions, labels, passers, and display options.</p>
       <div class="share-status" id="share-status" aria-live="polite"></div>
+      <div class="qr-popover" id="share-qr-popover" hidden>
+        <div class="qr-header">
+          <span>Share QR</span>
+          <button class="btn icon-btn qr-close" id="share-qr-close" type="button" aria-label="Close QR code">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="qr-canvas-shell" id="share-qr-canvas-shell" role="img" aria-label="QR code for current share link">
+        </div>
+        <p class="qr-status" id="share-qr-status">Scan to open this setup.</p>
+      </div>
     </section>
 
     <section class="control-group">
