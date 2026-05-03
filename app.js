@@ -547,7 +547,7 @@ function bakeStyles(clone, original) {
   const cloneNodes = clone.querySelectorAll('*');
   for (let i = 0; i < origNodes.length; i++) {
     const cs = getComputedStyle(origNodes[i]);
-    const props = ['display', 'fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'font-size', 'font-weight', 'text-anchor', 'dominant-baseline'];
+    const props = ['display', 'fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'font-family', 'font-size', 'font-weight', 'text-anchor', 'dominant-baseline'];
     let style = '';
     for (const p of props) {
       const v = cs.getPropertyValue(p);
