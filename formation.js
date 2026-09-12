@@ -164,6 +164,26 @@ function autoPlace(zoneToPlayerWithLibero, passerSet, system, setter) {
     return ga.row === 'F' ? -1 : 1;
   });
 
+  // Lane order has to respect the overlap rules. Two passers in the same row have
+  // a mandatory left-to-right order (z4 < z3 < z2, z5 < z6 < z1), and the
+  // hitter-priority sort above can invert it — putting a front-right passer in a
+  // lane left of a front-left one. Because passers are anchored, enforceOverlap
+  // cannot repair that afterwards, so the formation stays illegal. Reassign
+  // same-row passers to their own lanes in row order; the heuristic still decides
+  // which lanes the row occupies.
+  const laneOrder = passerOrdered.slice();
+  for (const rowOrder of [[4, 3, 2], [5, 6, 1]]) {
+    const lanes = [];
+    for (let i = 0; i < laneOrder.length; i++) {
+      if (rowOrder.includes(laneOrder[i])) lanes.push(i);
+    }
+    if (lanes.length < 2) continue;
+    const inRowOrder = lanes
+      .map(i => laneOrder[i])
+      .sort((a, b) => rowOrder.indexOf(a) - rowOrder.indexOf(b));
+    lanes.forEach((laneIdx, i) => { laneOrder[laneIdx] = inRowOrder[i]; });
+  }
+
   const passLineY = 6.5;
   const rowGap = MIN_GAP + 0.05;
   const frontRowHitterPasserZone = passerOrdered.find(isFrontRowHitterPasser) || null;
@@ -210,7 +230,7 @@ function autoPlace(zoneToPlayerWithLibero, passerSet, system, setter) {
     });
   } else {
     for (let i = 0; i < N; i++) {
-      const z = passerOrdered[i];
+      const z = laneOrder[i];
       const x = ((i + 1) / (N + 1)) * COURT_W;
       // Keep passer lanes even; only nudge front-row passers forward enough
       // to preserve front/back overlap legality when needed.
