@@ -95,7 +95,12 @@ function occupantInfo(occ) {
 }
 
 function isSelectedPasser(occ, passerSet) {
-  return passerSet.has(occ.id) || (occ.liberoSlot && passerSet.has('L'));
+  // A libero slot is the libero's, whichever name is drawn there. Reading
+  // eligibility off the displayed id meant the "show backrow M as L" display
+  // toggle changed who received serve: with the middle selected and the libero
+  // not, showing the middle's name also made them a passer.
+  if (occ.liberoSlot) return passerSet.has('L');
+  return passerSet.has(occ.id);
 }
 
 // Determine setter info: who sets this rotation.
