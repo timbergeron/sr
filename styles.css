@@ -172,7 +172,7 @@ html, body {
 }
 .roster-row {
   display: grid;
-  grid-template-columns: 42px 1fr;
+  grid-template-columns: 42px minmax(0, 1fr) 48px;
   align-items: center;
   gap: 8px;
 }

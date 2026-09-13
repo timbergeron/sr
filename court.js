@@ -201,7 +201,9 @@ function chipFontSize(label) {
 function renderPlayer(parent, zone, occ, pos, opts) {
   const role = SR.ROLES[occ.id];
   const playerLabels = opts.playerLabels || {};
-  const displayLabel = playerDisplayLabel(occ.id, playerLabels);
+  const fullLabel = playerDisplayLabel(occ.id, playerLabels);
+  const displayLabel = (opts.playerNumbers || {})[occ.id]
+    || (fullLabel.length <= 5 ? fullLabel : role.label);
   const g = svg('g', {
     class: 'player',
     'data-zone': zone,
