@@ -36,6 +36,11 @@ function playerSummary(ids) {
   }).join(', ');
 }
 
+function rosterName(value) {
+  const segments = new Intl.Segmenter(undefined, {granularity:'grapheme'}).segment(String(value));
+  return Array.from(segments, part => part.segment).slice(0, 64).join('');
+}
+
 function cleanedPlayerLabels() {
   const labels = {};
   for (const [id, value] of Object.entries(state.playerLabels)) {
@@ -183,7 +188,7 @@ function loadSharedStateFromUrl() {
     state.playerLabels = {};
     if (payload.labels && typeof payload.labels === 'object') {
       for (const [id, value] of Object.entries(payload.labels)) {
-        if (SR.ROLES[id]) state.playerLabels[id] = Array.from(String(value)).slice(0, 64).join('');
+        if (SR.ROLES[id]) state.playerLabels[id] = rosterName(value);
       }
     }
 
@@ -489,13 +494,13 @@ function renderRosterLabels() {
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.maxLength = 64;
     input.value = state.playerLabels[id] || '';
     input.placeholder = role.tag;
     input.setAttribute('aria-label', `Full name for ${role.tag}`);
     input.autocomplete = 'off';
     input.spellcheck = false;
     input.addEventListener('input', () => {
+      input.value = rosterName(input.value);
       state.playerLabels[id] = input.value;
       renderPasserList();
       renderCourts();
