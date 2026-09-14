@@ -13,6 +13,7 @@ const state = {
   passerCount: 3,
   passers: new Set(['L', 'O1', 'O2']), // canonical position ids ('L' for libero)
   playerLabels: {},
+  playerNumbers: {},
   showHints: true,
   showBackrowMAsL: true,
   showSpotNumbers: false,
@@ -35,6 +36,11 @@ function playerSummary(ids) {
   }).join(', ');
 }
 
+function rosterName(value) {
+  const segments = new Intl.Segmenter(undefined, {granularity:'grapheme'}).segment(String(value));
+  return Array.from(segments, part => part.segment).slice(0, 64).join('');
+}
+
 function cleanedPlayerLabels() {
   const labels = {};
   for (const [id, value] of Object.entries(state.playerLabels)) {
@@ -42,6 +48,11 @@ function cleanedPlayerLabels() {
     if (SR.ROLES[id] && label) labels[id] = label;
   }
   return labels;
+}
+
+function cleanedPlayerNumbers() {
+  return Object.fromEntries(Object.entries(state.playerNumbers)
+    .filter(([id, number]) => SR.ROLES[id] && /^[0-9]{1,2}$/.test(number)));
 }
 
 function roundCoord(value) {
@@ -69,7 +80,8 @@ function buildSharePayload() {
       backrowMAsL: state.showBackrowMAsL,
       spotNumbers: state.showSpotNumbers
     },
-    positions: currentPositionPayload()
+    positions: currentPositionPayload(),
+    ...(Object.keys(cleanedPlayerNumbers()).length ? {numbers: cleanedPlayerNumbers()} : {})
   };
 }
 
@@ -176,7 +188,14 @@ function loadSharedStateFromUrl() {
     state.playerLabels = {};
     if (payload.labels && typeof payload.labels === 'object') {
       for (const [id, value] of Object.entries(payload.labels)) {
-        if (SR.ROLES[id]) state.playerLabels[id] = String(value).slice(0, 10);
+        if (SR.ROLES[id]) state.playerLabels[id] = rosterName(value);
+      }
+    }
+
+    state.playerNumbers = {};
+    for (const [id, value] of Object.entries(payload.numbers || {})) {
+      if (SR.ROLES[id] && typeof value === 'string' && /^[0-9]{1,2}$/.test(value)) {
+        state.playerNumbers[id] = value;
       }
     }
 
@@ -465,7 +484,7 @@ function renderRosterLabels() {
   const roster = document.getElementById('roster-labels');
   roster.innerHTML = '';
   for (const id of availablePassers(state.system)) {
-    const row = document.createElement('label');
+    const row = document.createElement('div');
     row.className = 'roster-row';
 
     const role = SR.ROLES[id];
@@ -475,21 +494,35 @@ function renderRosterLabels() {
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.maxLength = 10;
     input.value = state.playerLabels[id] || '';
     input.placeholder = role.tag;
-    input.setAttribute('aria-label', `Custom label for ${role.tag}`);
+    input.setAttribute('aria-label', `Full name for ${role.tag}`);
     input.autocomplete = 'off';
     input.spellcheck = false;
     input.addEventListener('input', () => {
+      input.value = rosterName(input.value);
       state.playerLabels[id] = input.value;
       renderPasserList();
       renderCourts();
       scheduleShareUrlSync();
     });
 
+    const number = document.createElement('input');
+    number.type = 'text';
+    number.inputMode = 'numeric';
+    number.maxLength = 2;
+    number.placeholder = '#';
+    number.value = state.playerNumbers[id] || '';
+    number.setAttribute('aria-label', `Jersey number for ${role.tag}`);
+    number.addEventListener('input', () => {
+      number.value = number.value.replace(/[^0-9]/g, '').slice(0, 2);
+      state.playerNumbers[id] = number.value;
+      renderCourts();
+      scheduleShareUrlSync();
+    });
     row.appendChild(code);
     row.appendChild(input);
+    row.appendChild(number);
     roster.appendChild(row);
   }
 }
@@ -503,6 +536,7 @@ function renderCourts() {
       passerSet: state.passers,
       showSpotNumbers: state.showSpotNumbers,
       playerLabels: state.playerLabels,
+      playerNumbers: state.playerNumbers,
       onPositionsChange: scheduleShareUrlSync
     });
   }
