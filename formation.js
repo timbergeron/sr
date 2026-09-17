@@ -486,18 +486,225 @@ function validateOverlap(positions) {
   return errs;
 }
 
+// Nudges apart players whose constrained coordinates became exactly equal.
+//
+// Share links round coordinates to three decimals, so a legal pair sitting 0.0001
+// apart can collapse onto the same value and reopen as an overlap. Only exact ties
+// are touched, and whole runs are spread, so a three-way tie keeps its order. The
+// step is a fifth of the rounding grid, so it never reaches the next real value.
+function separateTies(positions) {
+  const step = 0.0002;
+  for (const trio of ROW_TRIOS) {
+    const present = trio.filter(z => positions[z]);
+    let index = 0;
+    while (index < present.length) {
+      const base = positions[present[index]].x;
+      let next = index + 1;
+      while (next < present.length && positions[present[next]].x === base) next++;
+      if (next - index > 1) {
+        present.slice(index, next).forEach((z, offset) => { positions[z].x = base + offset * step; });
+      }
+      index = next;
+    }
+  }
+  for (const [f, b] of COL_PAIRS) {
+    if (positions[f] && positions[b] && positions[f].y === positions[b].y) positions[b].y += step;
+  }
+  clampToCourt(positions);
+}
+
+// The constraints that bind one zone to its neighbours, and whether each holds.
+function constraintsFor(zone, positions) {
+  const me = positions[zone];
+  if (!me) return [];
+  const rules = [];
+  const [front, back] = COL_PAIRS.find(([f, b]) => f === zone || b === zone);
+  const other = zone === front ? back : front;
+  if (positions[other]) {
+    rules.push({
+      axis: 'Front/back',
+      relation: zone === front ? 'In front of' : 'Behind',
+      otherZone: other,
+      satisfied: zone === front ? me.y < positions[other].y : me.y > positions[other].y
+    });
+  }
+  const row = ZONE_GEOM[zone].row === 'F' ? ROW_TRIOS[0] : ROW_TRIOS[1];
+  const idx = row.indexOf(zone);
+  if (idx > 0 && positions[row[idx - 1]]) {
+    rules.push({ axis: 'Side-to-side', relation: 'Right of', otherZone: row[idx - 1],
+      satisfied: me.x > positions[row[idx - 1]].x });
+  }
+  if (idx < row.length - 1 && positions[row[idx + 1]]) {
+    rules.push({ axis: 'Side-to-side', relation: 'Left of', otherZone: row[idx + 1],
+      satisfied: me.x < positions[row[idx + 1]].x });
+  }
+  return rules;
+}
+
+// Said as an instruction rather than a rule: "Stay behind MAYA".
+function constraintPhrase(constraint, otherName) {
+  const verbs = {
+    'In front of': 'Stay in front of', 'Behind': 'Stay behind',
+    'Left of': 'Stay left of', 'Right of': 'Stay right of'
+  };
+  return `${verbs[constraint.relation] || constraint.relation} ${otherName}`;
+}
+
+// A broken constraint if there is one, otherwise the one closest to breaking.
+function mostRelevantConstraint(zone, positions) {
+  const all = constraintsFor(zone, positions);
+  const broken = all.find(c => !c.satisfied);
+  if (broken) return broken;
+  const me = positions[zone];
+  if (!me) return null;
+  const slack = c => {
+    const other = positions[c.otherZone];
+    if (!other) return Infinity;
+    return { 'In front of': other.y - me.y, 'Behind': me.y - other.y,
+      'Left of': other.x - me.x, 'Right of': me.x - other.x }[c.relation];
+  };
+  return all.reduce((best, c) => (best === null || slack(c) < slack(best) ? c : best), null);
+}
+
+// Where a player may be dragged without making the formation unsatisfiable:
+// each constrained neighbour beyond them keeps a gap's worth of room.
+function draggableBounds(zone) {
+  const pad = PLAYER_R + 0.05;
+  const isFront = ZONE_GEOM[zone].row === 'F';
+  const row = isFront ? ROW_TRIOS[0] : ROW_TRIOS[1];
+  const index = row.indexOf(zone);
+  return {
+    minX: pad + index * MIN_GAP,
+    maxX: COURT_W - pad - (row.length - 1 - index) * MIN_GAP,
+    minY: isFront ? pad : pad + MIN_GAP,
+    maxY: isFront ? COURT_D - pad - MIN_GAP : COURT_D - pad
+  };
+}
+
+// ---- Setup styles ----
+
+function columnX(zone) {
+  const col = ZONE_GEOM[zone].col;
+  return col === 'L' ? 1.5 : col === 'C' ? 4.5 : 7.5;
+}
+
+// The numbered court zones, before any serve-receive movement.
+function courtPositions() {
+  const positions = {};
+  for (const z of [1, 2, 3, 4, 5, 6]) {
+    positions[z] = { x: columnX(z), y: ZONE_GEOM[z].row === 'F' ? 1.5 : 6.0 };
+  }
+  return positions;
+}
+
+const SETTING_TARGET = { x: COURT_W / 2, y: 0.9 };
+
+// Positions transcribed from the six coached 5-1 reference courts, keyed by the
+// setter's zone (R1-R6: 1, 6, 5, 4, 3, 2). L is canonical even when the back-row
+// middle's name is displayed.
+const FIVE_ONE_RECEIVE_TEMPLATES = {
+  1: { S: [7.35, 6.85], O1: [7.0, 6.45], M1: [3.0, 1.15], OP: [1.1, 1.45], O2: [2.1, 6.4], L: [4.65, 6.45] },
+  6: { S: [4.9, 1.6], O1: [6.75, 6.5], M1: [7.9, 2.15], OP: [6.8, 0.6], O2: [2.25, 6.1], L: [4.5, 6.45] },
+  5: { S: [4.1, 2.8], O1: [4.5, 6.6], M2: [1.85, 2.4], OP: [7.65, 2.5], O2: [2.25, 6.2], L: [6.75, 6.5] },
+  4: { S: [1.1, 0.9], O1: [4.5, 6.15], M2: [1.65, 2.3], OP: [8.4, 8.1], O2: [2.25, 6.1], L: [6.8, 6.0] },
+  3: { S: [4.5, 0.9], O1: [2.15, 6.25], M2: [7.15, 2.0], OP: [6.0, 8.15], O2: [7.0, 6.4], L: [4.5, 6.65] },
+  2: { S: [4.5, 0.9], O1: [2.3, 6.1], M1: [1.75, 2.15], OP: [3.85, 8.4], O2: [4.5, 6.5], L: [6.75, 6.5] }
+};
+
+// Use the coached 5-1 reference for O1/O2/libero receive. Other receiver groups
+// and 6-2 keep generated lanes and move the setter to the nearest feasible spot.
+function smartPlace(zoneToPlayerWithLibero, passerSet, system, setter) {
+  const occByZone = {};
+  for (const [z, occ] of Object.entries(zoneToPlayerWithLibero)) occByZone[+z] = occupantInfo(occ);
+  const canonical = occ => (occ.liberoSlot ? 'L' : occ.id);
+
+  const receivers = new Set(Object.values(occByZone)
+    .filter(occ => isSelectedPasser(occ, passerSet)).map(canonical));
+  const template = FIVE_ONE_RECEIVE_TEMPLATES[setter.setterZone];
+  if (system === '5-1' && template && receivers.size === 3
+      && ['O1', 'O2', 'L'].every(id => receivers.has(id))) {
+    const positions = {};
+    for (const [z, occ] of Object.entries(occByZone)) {
+      const [x, y] = template[canonical(occ)];
+      positions[z] = { x, y };
+    }
+    clampToCourt(positions);
+    return positions;
+  }
+
+  const positions = autoPlace(zoneToPlayerWithLibero, passerSet, system, setter);
+  const fixed = new Set([1, 2, 3, 4, 5, 6].filter(z => occByZone[z] && isSelectedPasser(occByZone[z], passerSet)));
+  // Per-rotation edits may explicitly make the setter a receiver.
+  const setterZone = setter.setterZone;
+  if (fixed.has(setterZone)) return positions;
+
+  const pad = PLAYER_R + 0.05;
+  const gap = MIN_GAP;
+  const front = ZONE_GEOM[setterZone].row === 'F';
+  const row = front ? ROW_TRIOS[0] : ROW_TRIOS[1];
+  const index = row.indexOf(setterZone);
+  let minX = pad + index * gap;
+  let maxX = COURT_W - pad - (row.length - 1 - index) * gap;
+  row.forEach((z, i) => {
+    if (!fixed.has(z)) return;
+    if (i < index) minX = Math.max(minX, positions[z].x + (index - i) * gap);
+    if (i > index) maxX = Math.min(maxX, positions[z].x - (i - index) * gap);
+  });
+  const pair = COL_PAIRS.find(([f, b]) => f === setterZone || b === setterZone);
+  const other = front ? pair[1] : pair[0];
+  const minY = front ? pad : (fixed.has(other) ? positions[other].y : pad) + gap;
+  const maxY = front
+    ? (fixed.has(other) ? positions[other].y : COURT_D - pad) - gap
+    : COURT_D - pad;
+  if (!(minX <= maxX && minY <= maxY)) return positions;
+  positions[setterZone] = {
+    x: Math.min(Math.max(SETTING_TARGET.x, minX), maxX),
+    y: Math.min(Math.max(SETTING_TARGET.y, minY), maxY)
+  };
+  fixed.add(setterZone);
+
+  // Space each free player between the nearest fixed neighbours, reserving room
+  // for intervening players so every circle stays inside the court.
+  for (const trio of ROW_TRIOS) {
+    trio.forEach((z, i) => {
+      if (fixed.has(z)) return;
+      let lower = pad + i * gap;
+      let upper = COURT_W - pad - (trio.length - 1 - i) * gap;
+      if (i > 0) lower = Math.max(lower, positions[trio[i - 1]].x + gap);
+      for (let j = i + 1; j < trio.length; j++) {
+        if (fixed.has(trio[j])) upper = Math.min(upper, positions[trio[j]].x - (j - i) * gap);
+      }
+      positions[z].x = Math.min(Math.max(positions[z].x, lower), upper);
+    });
+  }
+  for (const [f, b] of COL_PAIRS) {
+    if (fixed.has(f) && !fixed.has(b)) {
+      positions[b].y = Math.max(positions[b].y, positions[f].y + gap);
+    } else if (fixed.has(b) && !fixed.has(f)) {
+      positions[f].y = Math.min(positions[f].y, positions[b].y - gap);
+    }
+  }
+  return positions;
+}
+
 // Build full per-rotation data including setter info, occupants, positions.
+// opts.setupStyle: 'smart' | 'courtPosition' | undefined (the original auto-placement).
 function buildRotation(system, rotationIdx, passerSet, opts = {}) {
   const lineup = lineupFor(system, rotationIdx);
   const setter = setterFor(system, lineup);
   const lineupL = applyLibero(lineup, opts.showBackrowMAsL !== false);
-  const positions = autoPlace(lineupL, passerSet, system, setter);
+  const positions = opts.setupStyle === 'smart'
+    ? smartPlace(lineupL, passerSet, system, setter)
+    : opts.setupStyle === 'courtPosition'
+      ? courtPositions()
+      : autoPlace(lineupL, passerSet, system, setter);
   return { rotationIdx, lineup, lineupL, setter, positions };
 }
 
 window.SR = {
-  ROLES, COURT_W, COURT_D, ATTACK_LINE, PLAYER_R,
+  ROLES, COURT_W, COURT_D, ATTACK_LINE, PLAYER_R, MIN_GAP, COL_PAIRS, ROW_TRIOS,
   baseLineup, lineupFor, applyLibero, occupantInfo, setterFor,
-  isSelectedPasser, onCourtIds, autoPlace, enforceOverlap, validateOverlap,
-  clampToCourt, buildRotation, ZONE_GEOM
+  isSelectedPasser, onCourtIds, autoPlace, smartPlace, courtPositions, enforceOverlap,
+  validateOverlap, separateTies, constraintsFor, constraintPhrase, mostRelevantConstraint,
+  draggableBounds, clampToCourt, buildRotation, ZONE_GEOM
 };
