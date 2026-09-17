@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Serve Receive Builder</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<meta name="theme-color" content="#F7F5F2" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#14161A" media="(prefers-color-scheme: dark)" />
+<meta name="description" content="Build, save and share volleyball serve receive formations for all six rotations." />
+<title>Serve Receive</title>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-F11XT2RJDW"></script>
 <script>
@@ -13,124 +17,250 @@
 
   gtag('config', 'G-F11XT2RJDW');
 </script>
-<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="icon" type="image/png" href="assets/favicon-64.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
 <link rel="stylesheet" href="styles.css" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+<script src="qrcode.min.js" defer></script>
 </head>
 <body>
-<div class="app">
-  <aside class="sidebar">
-    <header class="brand">
-      <h1>Serve Receive Builder</h1>
-      <p class="subtitle">Volleyball formation designer</p>
+<div class="app" id="app">
+  <aside class="settings" id="settings" aria-labelledby="settings-title">
+    <header class="settings-header">
+      <div class="brand">
+        <img src="assets/icon-128.png" alt="" width="36" height="36" />
+        <div>
+          <h1 id="settings-title">Serve Receive</h1>
+          <p>Team &amp; Settings</p>
+        </div>
+      </div>
+      <button class="text-button settings-done" id="settings-done" type="button">Done</button>
     </header>
+    <div class="settings-body">
+      <div class="save-banner" data-save-banner hidden></div>
 
-    <section class="control-group">
-      <h2>System</h2>
-      <div class="segmented" id="system-toggle" role="tablist">
-        <button class="seg-btn active" data-value="5-1" role="tab">5-1</button>
-        <button class="seg-btn" data-value="6-2" role="tab">6-2</button>
-      </div>
-    </section>
+      <section class="group" aria-labelledby="team-heading">
+        <h2 id="team-heading">Your team</h2>
+        <div class="card roster" id="roster"></div>
+        <p class="footnote">Short names use up to 5 characters. Optional jersey numbers appear on court.</p>
+      </section>
 
-    <section class="control-group">
-      <h2>Number of Passers</h2>
-      <div class="segmented" id="passer-count">
-        <button class="seg-btn" data-value="2">2</button>
-        <button class="seg-btn active" data-value="3">3</button>
-        <button class="seg-btn" data-value="4">4</button>
-        <button class="seg-btn" data-value="5">5</button>
-      </div>
-    </section>
-
-    <section class="control-group">
-      <h2>Passers</h2>
-      <div class="passer-checkboxes" id="passer-list"></div>
-      <div class="warn" id="passer-warn"></div>
-    </section>
-
-    <section class="control-group">
-      <h2>Names &amp; numbers</h2>
-      <div class="roster-labels" id="roster-labels"></div>
-    </section>
-
-    <section class="control-group">
-      <h2>Display</h2>
-      <label class="toggle-row">
-        <input type="checkbox" id="hints-toggle" checked />
-        <span>Show overlap hints</span>
-      </label>
-      <label class="toggle-row">
-        <input type="checkbox" id="backrow-m-as-l-toggle" checked />
-        <span>Show backrow M as L</span>
-      </label>
-      <label class="toggle-row">
-        <input type="checkbox" id="spot-numbers-toggle" />
-        <span>Show spot numbers</span>
-      </label>
-    </section>
-
-    <section class="control-group">
-      <h2>Share</h2>
-      <div class="share-row">
-        <button class="btn" id="copy-share-link">Copy Link</button>
-        <button class="btn icon-btn" id="share-qr" type="button" aria-label="Show QR code" aria-controls="share-qr-popover" aria-expanded="false" title="Show QR code">
-          <i class="fa-solid fa-qrcode" aria-hidden="true"></i>
-        </button>
-      </div>
-      <p class="hint share-hint">Includes current positions, labels, passers, and display options.</p>
-      <div class="share-status" id="share-status" aria-live="polite"></div>
-      <div class="qr-popover" id="share-qr-popover" hidden>
-        <div class="qr-header">
-          <span>Share QR</span>
-          <button class="btn icon-btn qr-close" id="share-qr-close" type="button" aria-label="Close QR code">
-            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-          </button>
+      <section class="group" aria-labelledby="system-heading">
+        <h2 id="system-heading">System</h2>
+        <div class="card">
+          <div class="segmented" data-system-control role="radiogroup" aria-labelledby="system-heading"></div>
         </div>
-        <div class="qr-canvas-shell" id="share-qr-canvas-shell" role="img" aria-label="QR code for current share link">
+      </section>
+
+      <section class="group" aria-labelledby="passers-heading">
+        <h2 id="passers-heading">Passers</h2>
+        <div class="card">
+          <div class="segmented count-control" id="passer-count" role="radiogroup" aria-label="Number receiving"></div>
+          <div class="passer-grid" id="passer-grid"></div>
+          <p class="receiving-summary" id="passer-summary"></p>
         </div>
-        <p class="qr-status" id="share-qr-status">Scan to open this setup.</p>
-      </div>
-    </section>
+        <p class="footnote" id="passer-footnote"></p>
+      </section>
 
-    <section class="control-group">
-      <h2>Export</h2>
-      <div class="export-row">
-        <button class="btn" id="export-png">PNG</button>
-        <button class="btn" id="export-pdf">PDF</button>
-        <button class="btn ghost" id="reset-btn">Reset Positions</button>
-      </div>
-    </section>
+      <section class="group" aria-labelledby="share-heading">
+        <h2 id="share-heading">Share</h2>
+        <div class="card list">
+          <button class="list-button" type="button" data-action="copy-link"><i class="fa-solid fa-link" aria-hidden="true"></i>Copy link</button>
+          <button class="list-button" type="button" data-action="show-qr"><i class="fa-solid fa-qrcode" aria-hidden="true"></i>Show QR code</button>
+          <button class="list-button" type="button" data-action="export-png"><i class="fa-regular fa-image" aria-hidden="true"></i>Export image</button>
+          <button class="list-button" type="button" data-action="export-pdf"><i class="fa-solid fa-print" aria-hidden="true"></i>Export PDF for printing</button>
+          <button class="list-button" type="button" data-action="open-link"><i class="fa-regular fa-clipboard" aria-hidden="true"></i>Open a shared link</button>
+        </div>
+        <p class="footnote">Share all six rotations, player names and jersey numbers. You can also open a link copied from another coach.</p>
+      </section>
 
-    <section class="control-group legend">
-      <h2>Legend</h2>
-      <ul>
-        <li><span class="dot setter"></span> Setter</li>
-        <li><span class="dot oh"></span> Outside Hitter</li>
-        <li><span class="dot mb"></span> Middle Blocker</li>
-        <li><span class="dot op"></span> Opposite</li>
-        <li><span class="dot lib"></span> Libero</li>
-        <li><span class="dot passer-ind"></span> Passer (ring)</li>
-      </ul>
-    </section>
+      <section class="group" aria-labelledby="formation-heading">
+        <h2 id="formation-heading">Formation</h2>
+        <div class="card list">
+          <button class="list-button" type="button" data-action="auto-arrange"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i><span id="auto-arrange-label">Auto-arrange rotation 1</span></button>
+          <button class="list-button" type="button" data-action="auto-arrange-all"><i class="fa-solid fa-wand-sparkles" aria-hidden="true"></i>Auto-arrange all six</button>
+        </div>
+        <p class="footnote" id="formation-footnote"></p>
+      </section>
+
+      <section class="group" aria-labelledby="display-heading">
+        <h2 id="display-heading">Display</h2>
+        <div class="card list">
+          <label class="switch-row"><span>Overlap hints</span><input type="checkbox" role="switch" id="hints-toggle" /><span class="switch" aria-hidden="true"></span></label>
+          <label class="select-row"><span>Back-row label</span>
+            <select id="backrow-label">
+              <option value="libero">Libero (L)</option>
+              <option value="middle">Middle (M1/M2)</option>
+            </select>
+          </label>
+          <label class="switch-row"><span>Zone numbers</span><input type="checkbox" role="switch" id="spot-numbers-toggle" /><span class="switch" aria-hidden="true"></span></label>
+        </div>
+        <p class="footnote">Choose the label for the libero spot on court and in passer choices. This only changes the display; who passes and player positions stay the same.</p>
+      </section>
+
+      <section class="group" aria-labelledby="legend-heading">
+        <h2 id="legend-heading">Legend</h2>
+        <ul class="card legend" id="legend"></ul>
+      </section>
+
+      <footer class="site-links">
+        <a href="privacy/">Privacy</a>
+        <a href="support/">Support</a>
+        <a href="https://github.com/timbergeron/sr" target="_blank" rel="noopener noreferrer"><i class="fa-brands fa-github" aria-hidden="true"></i> Source</a>
+      </footer>
+    </div>
   </aside>
 
-  <main class="main">
-    <div class="courts-grid" id="courts-grid"></div>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <main class="main" id="main">
+    <header class="toolbar">
+      <button class="setup-button" id="setup-button" type="button" aria-haspopup="menu" aria-expanded="false">
+        <span class="setup-text">
+          <span class="setup-name" id="setup-name">My formation</span>
+          <span class="setup-system" id="setup-system">5-1</span>
+        </span>
+        <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+      </button>
+      <div class="toolbar-actions">
+        <button class="tool-button" id="edit-button" type="button" aria-haspopup="menu" aria-expanded="false">Edit <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
+        <button class="tool-button icon-only" id="share-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Share"><i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i></button>
+        <button class="tool-button" id="team-button" type="button" aria-controls="settings"><i class="fa-solid fa-user-group" aria-hidden="true"></i> Team</button>
+      </div>
+    </header>
+
+    <div class="save-banner" data-save-banner hidden></div>
+
+    <section class="import-preview" id="import-preview" hidden aria-labelledby="import-title">
+      <div>
+        <h2 id="import-title">Shared formation</h2>
+        <p id="import-summary"></p>
+      </div>
+      <form class="import-form" id="import-form">
+        <label>Save as <input type="text" id="import-name" autocomplete="off" required /></label>
+        <div class="import-actions">
+          <button class="button" type="button" id="import-cancel">Not Now</button>
+          <button class="button primary" type="submit">Save</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="coaching" id="coaching" aria-label="Rotation controls">
+      <div class="segmented system-segmented" data-system-control role="radiogroup" aria-label="System"></div>
+      <div class="rotation-selector" id="rotation-selector" aria-label="Rotation"></div>
+      <div class="passer-bar" id="passer-bar"></div>
+      <div class="status-strip" id="status-strip"></div>
+      <label class="switch-row plain" id="phone-zone-row"><span>Position Zone View</span><input type="checkbox" role="switch" id="phone-zone-toggle" /><span class="switch" aria-hidden="true"></span></label>
+    </section>
+
+    <div class="courts" id="courts"></div>
+    <p class="drag-hint" id="drag-hint" hidden><i class="fa-regular fa-hand-pointer" aria-hidden="true"></i> Drag players to adjust. Tap one to see its positioning rules.</p>
   </main>
 </div>
 
-<a class="github-link" href="https://github.com/timbergeron/sr" aria-label="GitHub repository" target="_blank" rel="noopener noreferrer">
-  <i class="fa-brands fa-github" aria-hidden="true"></i>
-</a>
-<div class="mobile-swipe-cue" aria-label="Swipe right to view courts">
-  <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+<div class="recovery" id="recovery" hidden>
+  <div class="recovery-panel">
+    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+    <h2>Your saved setups couldn’t be opened</h2>
+    <p>Your saved data has been kept unchanged. Try again, or export a copy for recovery.</p>
+    <div class="recovery-actions">
+      <button class="button primary" type="button" data-action="retry-save">Try again</button>
+      <button class="button" type="button" data-action="export-backup">Export saved data</button>
+    </div>
+  </div>
 </div>
 
+<div class="notices" id="notices"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="menu" id="menu" role="menu" hidden></div>
+
+<dialog class="sheet" id="new-setup-dialog" aria-labelledby="new-setup-title">
+  <form method="dialog" id="new-setup-form">
+    <header class="sheet-header">
+      <button class="text-button" type="button" data-close>Cancel</button>
+      <h2 id="new-setup-title">New setup</h2>
+      <button class="text-button strong" type="submit" value="create">Create</button>
+    </header>
+    <label class="field-label" for="new-setup-name">Name</label>
+    <input class="field" type="text" id="new-setup-name" placeholder="New formation" autocomplete="off" />
+    <p class="field-label">System</p>
+    <div class="segmented" id="new-setup-system" role="radiogroup" aria-label="System">
+      <button type="button" class="segment" role="radio" data-value="5-1">5-1</button>
+      <button type="button" class="segment" role="radio" data-value="6-2">6-2</button>
+    </div>
+    <p class="footnote">Starts with fresh formations. Your current setup is saved.</p>
+    <p class="field-label">Starting layout</p>
+    <div class="segmented" id="new-setup-style" role="radiogroup" aria-label="Starting layout">
+      <button type="button" class="segment" role="radio" data-value="smart">Smart Setup</button>
+      <button type="button" class="segment" role="radio" data-value="courtPosition">Court Position</button>
+    </div>
+    <p class="footnote" id="new-setup-style-detail"></p>
+  </form>
+</dialog>
+
+<dialog class="alert" id="rename-dialog" aria-labelledby="rename-title">
+  <form method="dialog" id="rename-form">
+    <h2 id="rename-title">Rename setup</h2>
+    <input class="field" type="text" id="rename-name" autocomplete="off" aria-label="Name" />
+    <div class="alert-actions">
+      <button class="button" type="button" data-close>Cancel</button>
+      <button class="button primary" type="submit" value="rename">Rename</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="alert" id="delete-dialog" aria-labelledby="delete-title">
+  <form method="dialog">
+    <h2 id="delete-title">Delete setup?</h2>
+    <p>Its roster and all six formations are removed. This can’t be undone.</p>
+    <div class="alert-actions">
+      <button class="button" type="button" data-close>Cancel</button>
+      <button class="button destructive" type="submit" value="delete">Delete Setup</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="alert" id="system-dialog" aria-labelledby="system-dialog-title">
+  <form method="dialog">
+    <h2 id="system-dialog-title">Switch system?</h2>
+    <p id="system-dialog-message"></p>
+    <div class="alert-actions">
+      <button class="button" type="button" data-close>Cancel</button>
+      <button class="button destructive" type="submit" value="switch">Switch and Rearrange</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="alert" id="open-link-dialog" aria-labelledby="open-link-title">
+  <form method="dialog" id="open-link-form">
+    <h2 id="open-link-title">Open a shared link</h2>
+    <p>Paste a Serve Receive link from another coach. You can look at it before saving it as a new setup.</p>
+    <input class="field" type="text" id="open-link-input" placeholder="https://timbergeron.com/sr/#sr=…" autocomplete="off" aria-label="Shared link" />
+    <p class="field-error" id="open-link-error" hidden>No Serve Receive link found. Check that the whole link was copied.</p>
+    <div class="alert-actions">
+      <button class="button" type="button" data-close>Cancel</button>
+      <button class="button primary" type="submit" value="open">Open</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="alert" id="qr-dialog" aria-labelledby="qr-title">
+  <form method="dialog">
+    <h2 id="qr-title">Scan to open this setup</h2>
+    <div class="qr-code" id="qr-code" role="img" aria-label="QR code for the current share link"></div>
+    <p class="footnote" id="qr-status"></p>
+    <div class="alert-actions">
+      <button class="button primary" type="submit" value="done">Done</button>
+    </div>
+  </form>
+</dialog>
+
 <script src="formation.js"></script>
-<script src="court.js"></script>
 <script src="app.js"></script>
+<script src="labels.js"></script>
+<script src="court.js"></script>
+<script src="export.js"></script>
+<script src="ui.js"></script>
 </body>
 </html>
