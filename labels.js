@@ -54,8 +54,13 @@ let chipLabelCache = { key: null, labels: null };
 
 // What each player shows on a disc, guaranteed distinct.
 function courtLabels() {
-  const key = JSON.stringify([state.playerLabels, state.playerNumbers]);
+  const key = JSON.stringify([state.playerLabels, state.playerNumbers, state.showPlayerNamesAndNumbers]);
   if (chipLabelCache.key === key) return chipLabelCache.labels;
+  if (!state.showPlayerNamesAndNumbers) {
+    const labels = Object.fromEntries(PLAYER_IDS.map(id => [id, SR.ROLES[id].label]));
+    chipLabelCache = { key, labels };
+    return labels;
+  }
   const token = {};
   for (const id of PLAYER_IDS) {
     const custom = String(state.playerLabels[id] || '').trim().toUpperCase();

@@ -339,7 +339,7 @@ function passerChip(option, index, { size = 44, showName = false } = {}) {
   if (text !== SR.ROLES[displayId].label) disc.appendChild(element('span', 'chip-role', SR.ROLES[displayId].label));
   ring.appendChild(disc);
   button.appendChild(ring);
-  if (showName && hasCustomLabel(displayId)) button.appendChild(element('span', 'chip-caption', label(displayId)));
+  if (showName && state.showPlayerNamesAndNumbers && hasCustomLabel(displayId)) button.appendChild(element('span', 'chip-caption', label(displayId)));
   button.addEventListener('click', () => togglePasser(option.id, index));
   return button;
 }
@@ -538,15 +538,13 @@ function buildCourts() {
     flag.addEventListener('click', () => selectProblem(i));
     head.append(title, flag);
 
-    const zoneRow = element('label', 'switch-row plain card-zone');
-    const zoneInput = element('input');
-    zoneInput.type = 'checkbox';
-    zoneInput.setAttribute('role', 'switch');
-    zoneInput.setAttribute('aria-label', `Position Zone View for rotation ${i + 1}`);
-    zoneInput.addEventListener('change', () => setZoneView(i, zoneInput.checked));
-    const switchTrack = element('span', 'switch');
-    switchTrack.setAttribute('aria-hidden', 'true');
-    zoneRow.append(element('span', '', 'Position Zone View'), zoneInput, switchTrack);
+    const zoneRow = element('div', 'card-zone');
+    const viewButton = element('button', 'tool-button court-view-button');
+    viewButton.type = 'button';
+    viewButton.setAttribute('aria-haspopup', 'menu');
+    viewButton.setAttribute('aria-expanded', 'false');
+    viewButton.addEventListener('click', () => openMenu(viewButton, courtViewMenuItems(i)));
+    zoneRow.appendChild(viewButton);
 
     const court = createCourt({
       index: i,
@@ -567,7 +565,7 @@ function buildCourts() {
     frame.appendChild(court.element);
     card.append(head, zoneRow, frame);
     inner.appendChild(card);
-    ui.cards.push({ card, heading, setter, receiving, flag, zoneInput });
+    ui.cards.push({ card, heading, setter, receiving, flag, viewButton });
     ui.courts.push(court);
   }
 
@@ -606,10 +604,16 @@ function renderCards() {
     parts.receiving.textContent = `${receiving} receiving`;
     parts.receiving.classList.toggle('problem', receiving < 2);
     parts.flag.hidden = isRotationLegal(i);
-    parts.zoneInput.checked = ui.zoneView.has(i);
+    renderCourtViewButton(parts.viewButton, i);
     ui.courts[i].update();
   });
-  $('phone-zone-toggle').checked = ui.zoneView.has(ui.rotation);
+  renderCourtViewButton($('phone-court-view-button'), ui.rotation);
+}
+
+function renderCourtViewButton(button, index) {
+  const view = ui.zoneView.has(index) ? 'Zones' : 'Receive';
+  button.textContent = `Court view · ${view} ▾`;
+  button.setAttribute('aria-label', `Court view for rotation ${index + 1}, ${view}, player names and numbers ${state.showPlayerNamesAndNumbers ? 'on' : 'off'}, position badges ${state.showPositionBadges ? 'on' : 'off'}`);
 }
 
 function setZoneView(index, enabled) {
@@ -617,6 +621,11 @@ function setZoneView(index, enabled) {
   else ui.zoneView.delete(index);
   if (ui.selection && ui.selection.rotation === index) ui.selection = null;
   render();
+  if (enabled && POSITION_ZONES.every(zone => {
+    const position = state.rotations[index].positions[zone];
+    const target = SR.courtPositions()[zone];
+    return Math.abs(position.x - target.x) <= PLACEMENT_EPSILON && Math.abs(position.y - target.y) <= PLACEMENT_EPSILON;
+  })) showToast('Players are already in zone positions');
 }
 
 function selectPlayer(index, zone) {
@@ -731,7 +740,7 @@ function openMenu(button, items, align = 'end') {
     } else {
       const entry = element('button', `menu-item${item.destructive ? ' destructive' : ''}`);
       entry.type = 'button';
-      entry.setAttribute('role', item.checked === undefined ? 'menuitem' : 'menuitemradio');
+      entry.setAttribute('role', item.checked === undefined ? 'menuitem' : item.toggle ? 'menuitemcheckbox' : 'menuitemradio');
       if (item.checked !== undefined) entry.setAttribute('aria-checked', String(item.checked));
       entry.disabled = Boolean(item.disabled);
       if (item.title) entry.title = item.title;
@@ -747,7 +756,7 @@ function openMenu(button, items, align = 'end') {
         entry.appendChild(check);
       }
       entry.addEventListener('click', () => {
-        closeMenu(false);
+        closeMenu(true);
         item.action();
       });
       menu.appendChild(entry);
@@ -799,8 +808,24 @@ function editMenuItems() {
   return [
     { label: 'Undo', icon: 'fa-solid fa-arrow-rotate-left', disabled: !canUndo(), title: undoActionLabel(), action: undo },
     { section: `Rotation ${index + 1}` },
-    { label: 'Reset', icon: 'fa-solid fa-arrows-rotate', title: `Restore standard court positions in rotation ${index + 1}`, action: () => resetCourt(ui.rotation) },
-    { label: 'Smart Arrange', icon: 'fa-solid fa-wand-magic-sparkles', title: `Arrange rotation ${index + 1} using its selected passers`, action: () => smartArrange(ui.rotation) }
+    { label: 'Reset', icon: 'fa-solid fa-arrows-rotate', title: `Restore standard court positions in rotation ${index + 1}`, action: () => resetCourt(index) },
+    { label: 'Smart Arrange', icon: 'fa-solid fa-wand-magic-sparkles', title: `Arrange rotation ${index + 1} using its selected passers`, action: () => smartArrange(index) },
+    { section: 'All Rotations' },
+    { label: 'Reset All Rotations', icon: 'fa-solid fa-arrows-rotate', title: 'Restore standard court positions in all six rotations', action: resetAllCourts },
+    { label: 'Smart Arrange All Rotations', icon: 'fa-solid fa-wand-magic-sparkles', title: "Arrange all six rotations using each rotation's selected passers", action: smartArrangeAll }
+  ];
+}
+
+function courtViewMenuItems(index) {
+  return [
+    { section: 'This rotation' },
+    { label: 'Receive', checked: !ui.zoneView.has(index), action: () => setZoneView(index, false) },
+    { label: 'Zones (Court Position)', checked: ui.zoneView.has(index), action: () => setZoneView(index, true) },
+    { section: 'All rotations' },
+    { label: 'Player names & numbers', checked: state.showPlayerNamesAndNumbers, toggle: true,
+      title: 'Show role codes without deleting player details', action: () => setShowPlayerNamesAndNumbers(!state.showPlayerNamesAndNumbers) },
+    { label: 'Position badges', checked: state.showPositionBadges, toggle: true,
+      title: 'Show court positions 1 through 6 beside each player', action: () => setShowPositionBadges(!state.showPositionBadges) }
   ];
 }
 
@@ -1007,7 +1032,7 @@ function wireControls() {
   $('hints-toggle').addEventListener('change', event => setShowHints(event.target.checked));
   $('spot-numbers-toggle').addEventListener('change', event => setShowSpotNumbers(event.target.checked));
   $('backrow-label').addEventListener('change', event => setShowBackrowMAsL(event.target.value === 'libero'));
-  $('phone-zone-toggle').addEventListener('change', event => setZoneView(ui.rotation, event.target.checked));
+  $('phone-court-view-button').addEventListener('click', () => openMenu($('phone-court-view-button'), courtViewMenuItems(ui.rotation)));
 
   $('import-form').addEventListener('submit', event => {
     event.preventDefault();

@@ -300,6 +300,16 @@ function courtPlayers(index, { positions, activeZone = null, selectedZone = null
   });
 }
 
+// The rotational position stays attached to the disc, above neighbouring players.
+function positionBadgeMarkup(player, unitsPerPx) {
+  if (!state.showPositionBadges) return '';
+  const side = DIAMETER * 0.40;
+  const offset = -DIAMETER * 0.36;
+  return `<g class="position-badge" transform="scale(${player.scale})" pointer-events="none"><g transform="translate(${fmt(offset)} ${fmt(offset)})">
+    <circle r="${fmt(side / 2)}" fill="#fff" stroke="${COURT_COLORS.netBody}" stroke-width="${fmt(Math.max(0.75 * unitsPerPx, side * 0.055))}"/>
+    <text text-anchor="middle" dominant-baseline="central" font-family='${CHIP_FONT}' font-weight="700" font-size="${fmt(side * 0.68)}" fill="${COURT_COLORS.netBody}">${player.zone}</text></g></g>`;
+}
+
 // A complete, static court for exports.
 function courtSVGString(index, { size, floorHref }) {
   const rotation = state.rotations[index];
@@ -309,9 +319,10 @@ function courtSVGString(index, { size, floorHref }) {
   const players = courtPlayers(index, { positions: rotation.positions, reduceMotion: true });
   const bodies = players.map(p => `<g transform="translate(${fmt(p.position.x)} ${fmt(p.position.y)})">${badgeMarkup(id, p, unitsPerPx)}</g>`).join('');
   const labels = players.map(p => `<g transform="translate(${fmt(p.position.x + p.nudge.dx)} ${fmt(p.position.y + p.nudge.dy)})" filter="url(#${id}-text-shadow)">${labelTextMarkup(p)}</g>`).join('');
+  const badges = players.map(p => `<g transform="translate(${fmt(p.position.x)} ${fmt(p.position.y)})">${positionBadgeMarkup(p, unitsPerPx)}</g>`).join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${fmt(size * COURT_VIEW.height / COURT_VIEW.width)}" viewBox="${COURT_VIEW.x} ${COURT_VIEW.y} ${COURT_VIEW.width} ${COURT_VIEW.height}">
     ${courtDefsMarkup(id)}${courtFloorMarkup(id, floorHref)}
-    ${state.showSpotNumbers ? spotNumbersMarkup() : ''}${bodies}${labels}</svg>`;
+    ${state.showSpotNumbers ? spotNumbersMarkup() : ''}${bodies}${labels}${badges}</svg>`;
 }
 
 // ---- Live court ----
@@ -334,13 +345,15 @@ function createCourt(options) {
   svg.setAttribute('aria-label', `Rotation ${index + 1} court`);
   svg.innerHTML = `${courtDefsMarkup(id)}${courtFloorMarkup(id, FLOOR_TEXTURE)}
     ${options.watermark ? watermarkMarkup(`R${index + 1}`) : ''}
-    <g class="spots"></g><g class="hints" pointer-events="none"></g><g class="bodies"></g><g class="labels" pointer-events="none"></g>`;
+    <g class="spots"></g><g class="hints" pointer-events="none"></g><g class="bodies"></g><g class="labels" pointer-events="none"></g><g class="position-badges" pointer-events="none"></g>`;
   const spotsLayer = svg.querySelector('.spots');
   const hintsLayer = svg.querySelector('.hints');
   const bodiesLayer = svg.querySelector('.bodies');
   const labelsLayer = svg.querySelector('.labels');
+  const badgesLayer = svg.querySelector('.position-badges');
   const bodyEls = {};
   const labelEls = {};
+  const badgeEls = {};
   for (const zone of POSITION_ZONES) {
     const body = document.createElementNS(SVG_NS, 'g');
     body.setAttribute('class', 'player');
@@ -354,6 +367,10 @@ function createCourt(options) {
     text.setAttribute('filter', `url(#${id}-text-shadow)`);
     labelsLayer.appendChild(text);
     labelEls[zone] = text;
+    const badge = document.createElementNS(SVG_NS, 'g');
+    badge.setAttribute('class', 'player-position');
+    badgesLayer.appendChild(badge);
+    badgeEls[zone] = badge;
   }
 
   let drag = null;
@@ -403,6 +420,10 @@ function createCourt(options) {
       body.innerHTML = (player.isSelected ? haloMarkup(`${id}-${player.zone}`, player, perPx) : '')
         + (player.zone === focusedZone ? focusRing : '') + badgeMarkup(id, player, perPx);
       text.innerHTML = labelTextMarkup(player);
+      const badge = badgeEls[player.zone];
+      badge.style.transform = `translate(${fmt(x)}px, ${fmt(y)}px)`;
+      badge.classList.toggle('is-held', Boolean(still));
+      badge.innerHTML = positionBadgeMarkup(player, perPx);
       body.setAttribute('tabindex', interactive ? '0' : '-1');
       body.setAttribute('aria-pressed', player.isSelected ? 'true' : 'false');
       body.setAttribute('aria-label', accessibleName(player));
@@ -416,6 +437,7 @@ function createCourt(options) {
       for (const zone of desired) {
         bodiesLayer.appendChild(bodyEls[zone]);
         labelsLayer.appendChild(labelEls[zone]);
+        badgesLayer.appendChild(badgeEls[zone]);
       }
     }
   }

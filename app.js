@@ -34,6 +34,8 @@ const state = {
   showHints: true,
   showBackrowMAsL: true,
   showSpotNumbers: false,
+  showPositionBadges: false,
+  showPlayerNamesAndNumbers: true,
   rotations: []
 };
 
@@ -113,6 +115,9 @@ function statePayload(round) {
     },
     positions: currentPositionPayload(round)
   };
+  // Additive v1 fields: omit defaults to preserve legacy links byte for byte.
+  if (state.showPositionBadges) payload.display.positionBadges = true;
+  if (!state.showPlayerNamesAndNumbers) payload.display.playerNamesAndNumbers = false;
   const numbers = cleanedPlayerNumbers();
   if (Object.keys(numbers).length) payload.numbers = numbers;
   const rotationKeys = Object.keys(state.rotationPassers).sort();
@@ -242,6 +247,8 @@ function normalizePayload(raw) {
     },
     positions
   };
+  if (display.positionBadges === true) payload.display.positionBadges = true;
+  if (display.playerNamesAndNumbers === false) payload.display.playerNamesAndNumbers = false;
   if (Object.keys(numbers).length) payload.numbers = numbers;
   if (Object.keys(rotationPassers).length) payload.rotationPassers = rotationPassers;
   if (SETUP_STYLES.includes(raw.setupStyle)) payload.setupStyle = raw.setupStyle;
@@ -290,6 +297,8 @@ function adoptPayloadFields(payload) {
   state.showHints = payload.display.hints;
   state.showBackrowMAsL = payload.display.backrowMAsL;
   state.showSpotNumbers = payload.display.spotNumbers;
+  state.showPositionBadges = payload.display.positionBadges === true;
+  state.showPlayerNamesAndNumbers = payload.display.playerNamesAndNumbers !== false;
 }
 
 // Overlays hand-placed positions carried by a link or a saved setup.
@@ -518,6 +527,16 @@ function setShowSpotNumbers(value) {
   bumpShare();
 }
 
+function setShowPositionBadges(value) {
+  state.showPositionBadges = Boolean(value);
+  bumpShare();
+}
+
+function setShowPlayerNamesAndNumbers(value) {
+  state.showPlayerNamesAndNumbers = Boolean(value);
+  bumpShare();
+}
+
 // Purely a display change: refresh the drawn names, keep every position.
 function setShowBackrowMAsL(value) {
   if (state.showBackrowMAsL === Boolean(value)) return;
@@ -682,6 +701,23 @@ function smartArrange(index) {
   arrangeRotation(index, 'smart', 'Smart Arrange');
 }
 
+function arrangeAll(style, undoLabel) {
+  pushUndo(undoLabel);
+  state.setupStyle = style;
+  state.rotationSetupStyles = {};
+  state.rotations = buildRotations();
+  noteRearrangement(style === 'smart' ? 'Smart arranged all six rotations' : 'Reset all six rotations to court positions');
+  bumpShare();
+}
+
+function resetAllCourts() {
+  arrangeAll('courtPosition', 'Reset all rotations');
+}
+
+function smartArrangeAll() {
+  arrangeAll('smart', 'Smart Arrange all rotations');
+}
+
 // Puts the suggested formation back for one court, keeping its placement style.
 function autoArrange(index) {
   if (!state.rotations[index]) return;
@@ -795,7 +831,9 @@ function undo() {
     'System': 'Undid system change',
     'Reset rotation': 'Restored positions',
     'Smart Arrange': 'Undid Smart Arrange',
-    'Reset': 'Restored positions in all six rotations'
+    'Reset': 'Restored positions in all six rotations',
+    'Reset all rotations': 'Restored positions in all six rotations',
+    'Smart Arrange all rotations': 'Undid Smart Arrange in all six rotations'
   };
   const action = entry.label.startsWith('Move ')
     ? `Undid moving ${entry.label.slice(5)}`

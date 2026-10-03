@@ -244,6 +244,23 @@ function drawPrintCourt(ctx, index, left, top, width, height) {
         centre.y + nudge.dy * unit + radius * 0.46 - radius * 2 * roleLiftFraction(text));
     }
   }
+  if (state.showPositionBadges) {
+    for (const zone of POSITION_ZONES) {
+      const centre = point(rotation.positions[zone]);
+      const side = radius * 2 * 0.40;
+      const offset = -radius * 2 * 0.36;
+      ctx.beginPath();
+      ctx.arc(centre.x + offset, centre.y + offset, side / 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = Math.max(0.75, side * 0.055);
+      ctx.stroke();
+      ctx.fillStyle = '#000';
+      ctx.font = `700 ${side * 0.68}px ${SYSTEM_FONT}`;
+      ctx.fillText(String(zone), centre.x + offset, centre.y + offset);
+    }
+  }
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
 }
