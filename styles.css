@@ -183,6 +183,9 @@ button:disabled { cursor: default; }
 
 .switch-row > span:first-child, .select-row > span:first-child { flex: 1; }
 .switch-row { cursor: pointer; user-select: none; }
+/* Keep hidden inputs inside the sidebar's scroll area. Without a positioned row,
+   their containing block is the sticky sidebar and they extend the whole page. */
+.switch-row { position: relative; }
 .switch-row input { position: absolute; opacity: 0; pointer-events: none; }
 .switch {
   position: relative;
