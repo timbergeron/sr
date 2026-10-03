@@ -9,6 +9,8 @@ const SHARE_VERSION = 1;
 const PLAYER_IDS = ['S', 'S1', 'S2', 'O1', 'O2', 'M1', 'M2', 'OP', 'L'];
 const POSITION_ZONES = [1, 2, 3, 4, 5, 6];
 const SETUP_STYLES = ['smart', 'courtPosition'];
+// The order the system pickers show.
+const SYSTEMS = ['4-2', '5-1', '6-2'];
 // Links from other devices may carry names this long; typing is capped far shorter.
 const MAX_LABEL_LENGTH = 64;
 const MAX_NAME_ENTRY_LENGTH = 5;
@@ -175,7 +177,7 @@ function currentShareHref() {
 // is trusted. Returns null when the payload can't describe a formation.
 function normalizePayload(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  if (raw.system !== '5-1' && raw.system !== '6-2') return null;
+  if (!SYSTEMS.includes(raw.system)) return null;
   const system = raw.system;
   const valid = new Set(availablePassers(system));
   const selection = list => {
@@ -600,7 +602,7 @@ function commitDrag(index, zone, snapshot) {
 // ---- Edits ----
 
 function setSystem(system) {
-  if (system === state.system || (system !== '5-1' && system !== '6-2')) return;
+  if (system === state.system || !SYSTEMS.includes(system)) return;
   pushUndo('System');
   state.system = system;
   const valid = new Set(availablePassers(system));

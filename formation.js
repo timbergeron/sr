@@ -29,9 +29,10 @@ function baseLineup(system) {
   if (system === '5-1') {
     // S in z1, then alternating role types: OH, MB, OP, OH, MB
     return { 1: 'S',  2: 'O1', 3: 'M1', 4: 'OP', 5: 'O2', 6: 'M2' };
-  } else {
-    return { 1: 'S1', 2: 'O1', 3: 'M1', 4: 'S2', 5: 'O2', 6: 'M2' };
   }
+  // 6-2 and 4-2: two setters three spots apart, so one is always in the front row.
+  // The two systems share this lineup and differ in which of them sets.
+  return { 1: 'S1', 2: 'O1', 3: 'M1', 4: 'S2', 5: 'O2', 6: 'M2' };
 }
 
 // Rotate lineup by N rotations. After R1 the player in z2 is now in z1, etc.
@@ -106,14 +107,17 @@ function isSelectedPasser(occ, passerSet) {
 // Determine setter info: who sets this rotation.
 // In 5-1: the setter (S) always sets, regardless of front/back.
 // In 6-2: backrow setter sets; frontrow setter hits.
+// In 4-2: frontrow setter sets; the backrow setter stays out of the play until
+// they rotate up.
 function setterFor(system, lineup) {
   if (system === '5-1') {
     for (const [z, id] of Object.entries(lineup)) {
       if (id === 'S') return { setterId: 'S', setterZone: +z };
     }
   } else {
-    // pick whichever S is in back row (zones 1,5,6)
-    for (const z of [1, 5, 6]) {
+    // 6-2 picks whichever S is in back row (zones 1,5,6); 4-2 the one at the net.
+    const zones = system === '4-2' ? [4, 3, 2] : [1, 5, 6];
+    for (const z of zones) {
       const id = lineup[z];
       if (id === 'S1' || id === 'S2') return { setterId: id, setterZone: z };
     }
@@ -391,7 +395,7 @@ function autoPlace(zoneToPlayerWithLibero, passerSet, system, setter) {
   // ----- Step 5: enforce overlap, anchoring passers (so the receive formation stays
   // intact) and the front-row setter (5-1 only — they're already at the set target).
   const anchored = new Set(passerOrdered);
-  if (isFrontSetter && system === '5-1') anchored.add(setterZone);
+  if (isFrontSetter && (system === '5-1' || system === '4-2')) anchored.add(setterZone);
   enforceOverlap(positions, anchored);
   clampToCourt(positions);
   return positions;
@@ -611,8 +615,32 @@ const FIVE_ONE_RECEIVE_TEMPLATES = {
   2: { S: [4.5, 0.9], O1: [2.3, 6.1], M1: [1.75, 2.15], OP: [3.85, 8.4], O2: [4.5, 6.5], L: [6.75, 6.5] }
 };
 
-// Use the coached 5-1 reference for O1/O2/libero receive. Other receiver groups
-// and 6-2 keep generated lanes and move the setter to the nearest feasible spot.
+// 4-2 receive for O1, O2 and L, keyed by the setter at the net and their zone:
+// S2 is up in R1-R3 and S1 in R4-R6.
+//
+// The 4-2 uses the 5-1's lineup with the opposite replaced by a second setter, so
+// the four players who aren't setters stand exactly where the coached 5-1
+// formation puts them. What changes is the setters. The one at the net takes the
+// spot the 5-1 reference gives its front-row setter, by zone: the far-left corner
+// from zone 4, the middle of the net from zones 3 and 2. The one in the back row
+// does not set, so rather than penetrating towards the net as a 5-1 setter would,
+// they wait deep, in the spot the 5-1 reference gives its back-row opposite.
+// R4-R6 are therefore the 5-1's R4-R6 unchanged, with S1 and S2 for S and OP.
+const FOUR_TWO_RECEIVE_TEMPLATES = {
+  S2: {
+    4: { S2: [1.1, 0.9], O1: [7.0, 6.45], M1: [3.0, 1.15], S1: [8.4, 8.1], O2: [2.1, 6.4], L: [4.65, 6.45] },
+    3: { S2: [4.5, 0.9], O1: [6.75, 6.5], M1: [7.9, 2.15], S1: [6.0, 8.15], O2: [2.25, 6.1], L: [4.5, 6.45] },
+    2: { S2: [4.5, 0.9], O1: [4.5, 6.6], M2: [1.85, 2.4], S1: [3.85, 8.4], O2: [2.25, 6.2], L: [6.75, 6.5] }
+  },
+  S1: {
+    4: { S1: [1.1, 0.9], O1: [4.5, 6.15], M2: [1.65, 2.3], S2: [8.4, 8.1], O2: [2.25, 6.1], L: [6.8, 6.0] },
+    3: { S1: [4.5, 0.9], O1: [2.15, 6.25], M2: [7.15, 2.0], S2: [6.0, 8.15], O2: [7.0, 6.4], L: [4.5, 6.65] },
+    2: { S1: [4.5, 0.9], O1: [2.3, 6.1], M1: [1.75, 2.15], S2: [3.85, 8.4], O2: [4.5, 6.5], L: [6.75, 6.5] }
+  }
+};
+
+// Use the coached reference for O1/O2/libero receive in 5-1 and 4-2. Other receiver
+// groups and 6-2 keep generated lanes and move the setter to the nearest feasible spot.
 function smartPlace(zoneToPlayerWithLibero, passerSet, system, setter) {
   const occByZone = {};
   for (const [z, occ] of Object.entries(zoneToPlayerWithLibero)) occByZone[+z] = occupantInfo(occ);
@@ -620,8 +648,12 @@ function smartPlace(zoneToPlayerWithLibero, passerSet, system, setter) {
 
   const receivers = new Set(Object.values(occByZone)
     .filter(occ => isSelectedPasser(occ, passerSet)).map(canonical));
-  const template = FIVE_ONE_RECEIVE_TEMPLATES[setter.setterZone];
-  if (system === '5-1' && template && receivers.size === 3
+  const template = system === '5-1'
+    ? FIVE_ONE_RECEIVE_TEMPLATES[setter.setterZone]
+    : system === '4-2'
+      ? (FOUR_TWO_RECEIVE_TEMPLATES[setter.setterId] || {})[setter.setterZone]
+      : null;
+  if (template && receivers.size === 3
       && ['O1', 'O2', 'L'].every(id => receivers.has(id))) {
     const positions = {};
     for (const [z, occ] of Object.entries(occByZone)) {

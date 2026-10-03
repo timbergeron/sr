@@ -21,7 +21,7 @@ const ui = {
 };
 
 const STYLE_DETAILS = {
-  smart: 'Start with O1, O2 and L passing. Use the coached receive formations for 5-1, or automatic receiver lanes and setter placement for 6-2.',
+  smart: 'Start with O1, O2 and L passing. 5-1 and 4-2 use the coached receive formations, with the 4-2 back-row setter staying out of the pass. 6-2 uses automatic receiver lanes and setter placement.',
   courtPosition: 'Place each player in their standard rotation zone, with three at the front and three at the back.'
 };
 const ROTATION_PREFERENCE = 'serve-receive.rotation';
@@ -284,7 +284,7 @@ function buildRosterRow(id) {
 function renderSystemControls() {
   for (const control of document.querySelectorAll('[data-system-control]')) {
     if (!control.childElementCount) {
-      for (const system of ['5-1', '6-2']) {
+      for (const system of SYSTEMS) {
         const button = element('button', 'segment', system);
         button.type = 'button';
         button.dataset.value = system;
