@@ -678,6 +678,24 @@ body.is-previewing .setup-button i { display: none; }
 
 .drag-hint { margin: 12px 4px 0; color: var(--text-dim); font-size: 13px; }
 
+.native-app-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  margin: 20px 4px 0;
+  padding: 10px 12px;
+  color: var(--accent-blue);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-decoration: none;
+}
+.native-app-link img { flex: none; border-radius: 22.37%; }
+.native-app-link strong { display: block; font-size: 15px; font-weight: 600; }
+.native-app-link span span { display: block; margin-top: 2px; color: var(--text-dim); font-size: 12px; }
+.native-app-link:hover { background: var(--panel-raised); }
+
 /* Phones: one rotation at a time, swiped like pages. */
 @media (max-width: 759px) {
   .main { padding: 0 16px 32px; }
