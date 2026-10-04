@@ -33,6 +33,25 @@ const ROLE_COLORS = {
   lib: '#8F7028'
 };
 const DIAMETER = SR.PLAYER_R * 2;
+// WebKit rounds font metrics at sub-pixel SVG font sizes. Draw text in larger
+// local units, then scale it back to the physical court size.
+const SVG_TEXT_SCALE = 100;
+const svgTextBaselineCache = new Map();
+let svgTextMeasureContext = null;
+
+function svgTextBaseline(text, size, weight = 600) {
+  const key = `${weight}:${text}`;
+  if (!svgTextBaselineCache.has(key)) {
+    if (!svgTextMeasureContext) svgTextMeasureContext = document.createElement('canvas').getContext('2d');
+    svgTextMeasureContext.font = `${weight} 100px ${CHIP_FONT}`;
+    const metrics = svgTextMeasureContext.measureText(text);
+    // Align the visible glyphs, including accents, rather than the font's line box.
+    const fraction = Number.isFinite(metrics.actualBoundingBoxAscent) && Number.isFinite(metrics.actualBoundingBoxDescent)
+      ? (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 200 : 0.35;
+    svgTextBaselineCache.set(key, fraction);
+  }
+  return fmt(size * SVG_TEXT_SCALE * svgTextBaselineCache.get(key));
+}
 // Every badge measurement is a fraction of its diameter. Halo floors are in CSS
 // pixels: a hairline stays a hairline on a small court.
 const BADGE = {
@@ -110,16 +129,22 @@ function courtDefsMarkup(id) {
       <stop offset="0" stop-color="${liftColor(ROLE_COLORS[family], 0.035)}"/>
       <stop offset="1" stop-color="${liftColor(ROLE_COLORS[family], -0.035)}"/>
     </linearGradient>`).join('');
-  const shadow = (name, dy, blur, opacity) => `
-    <filter id="${id}-${name}" filterUnits="userSpaceOnUse" x="-2" y="-2" width="4" height="4" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="${fmt(dy)}" stdDeviation="${fmt(blur / 2)}" flood-color="#000" flood-opacity="${opacity}"/>
-    </filter>`;
+  // A vector shadow keeps overlapping discs visible in WebKit. Its filtered
+  // version can lose an entire disc when another disc is drawn over it.
+  const shadow = (name, blur, opacity) => {
+    const radius = DIAMETER / 2;
+    return `<radialGradient id="${id}-${name}">
+      <stop offset="${fmt((radius - blur) / (radius + blur))}" stop-color="#000" stop-opacity="${opacity}"/>
+      <stop offset="${fmt(radius / (radius + blur))}" stop-color="#000" stop-opacity="${opacity / 2}"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>`;
+  };
   const reach = Math.max(SR.COURT_W, SR.COURT_D);
   const vignetteStart = 0.35 / 0.9;
   return `<defs>${gradients}
-    ${shadow('shadow', DIAMETER * 0.04, DIAMETER * 0.08, 0.20)}
-    ${shadow('shadow-selected', DIAMETER * 0.06, DIAMETER * 0.12, 0.28)}
-    ${shadow('shadow-dragging', DIAMETER * 0.14, DIAMETER * 0.26, 0.38)}
+    ${shadow('shadow', DIAMETER * 0.08, 0.20)}
+    ${shadow('shadow-selected', DIAMETER * 0.12, 0.28)}
+    ${shadow('shadow-dragging', DIAMETER * 0.26, 0.38)}
     <radialGradient id="${id}-light" gradientUnits="userSpaceOnUse" cx="${SR.COURT_W / 2}" cy="${fmt(SR.COURT_D * 0.42)}" r="${reach * 0.75}">
       <stop offset="0" stop-color="#fff" stop-opacity="0.06"/>
       <stop offset="0.5" stop-color="#fff" stop-opacity="0.02"/>
@@ -231,7 +256,10 @@ function badgeMarkup(id, player, unitsPerPx) {
   const fillRadius = d / 2 - rim;
   const edgeWidth = d * BADGE.edge;
   const indicatorRadius = fillRadius - d * BADGE.indicatorInset;
-  let markup = '';
+  const shadow = player.isDragging ? 'shadow-dragging' : player.isSelected ? 'shadow-selected' : 'shadow';
+  const shadowBlur = d * (player.isDragging ? 0.26 : player.isSelected ? 0.12 : 0.08);
+  const shadowY = d * (player.isDragging ? 0.14 : player.isSelected ? 0.06 : 0.04);
+  let markup = `<circle cy="${fmt(shadowY)}" r="${fmt(d / 2 + shadowBlur)}" fill="url(#${id}-${shadow})" pointer-events="none"/>`;
   // A ring of floor colour reads as the gap between two overlapping discs, and is
   // invisible anywhere else, so only the disc on top gets it.
   if (player.overlapsNeighbour) markup += `<circle r="${fmt(d * 1.13 / 2)}" fill="${COURT_COLORS.floor}"/>`;
@@ -245,18 +273,18 @@ function badgeMarkup(id, player, unitsPerPx) {
     const width = Math.max(2 * unitsPerPx, d * 0.09);
     markup += `<circle r="${fmt(d * 1.36 / 2 - width / 2)}" fill="none" stroke="${COURT_COLORS.hintBad}" stroke-width="${fmt(width)}"/>`;
   }
-  const shadow = player.isDragging ? 'shadow-dragging' : player.isSelected ? 'shadow-selected' : 'shadow';
-  return `<g class="badge" filter="url(#${id}-${shadow})" transform="scale(${player.scale})">${markup}</g>`;
+  return `<g class="badge" transform="scale(${player.scale})">${markup}</g>`;
 }
 
 function labelTextMarkup(player) {
   const d = DIAMETER;
   const nameSize = d * chipFontFraction(player.label);
+  const name = player.label.toUpperCase();
   // WebKit can discard filtered SVG glyphs at this court-unit font size.
   // A thin painted outline keeps the contrast without rasterizing the text.
-  const common = `text-anchor="middle" dominant-baseline="central" font-family='${CHIP_FONT}' font-weight="600" fill="#fff" stroke="#000" stroke-opacity="0.25" stroke-width="0.012" paint-order="stroke fill"`;
+  const common = `text-anchor="middle" dominant-baseline="alphabetic" font-family='${CHIP_FONT}' font-weight="600" fill="#fff" stroke="#000" stroke-opacity="0.25" stroke-width="${0.012 * SVG_TEXT_SCALE}" paint-order="stroke fill"`;
   if (player.label === player.role) {
-    return `<text y="0" font-size="${fmt(nameSize)}" ${common}>${escapeXML(player.label.toUpperCase())}</text>`;
+    return `<g transform="scale(${1 / SVG_TEXT_SCALE})"><text y="0" dy="${svgTextBaseline(name, nameSize)}" font-size="${fmt(nameSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(name)}</text></g>`;
   }
   const lineHeight = 1.19;
   const nameHeight = nameSize * lineHeight;
@@ -266,8 +294,8 @@ function labelTextMarkup(player) {
   const total = nameHeight + spacing + roleHeight;
   const nameY = -total / 2 + nameHeight / 2;
   const roleY = total / 2 - roleHeight / 2 - d * roleLiftFraction(player.label);
-  return `<text y="${fmt(nameY)}" font-size="${fmt(nameSize)}" ${common}>${escapeXML(player.label.toUpperCase())}</text>
-    <text y="${fmt(roleY)}" font-size="${fmt(roleSize)}" ${common}>${escapeXML(player.role)}</text>`;
+  return `<g transform="scale(${1 / SVG_TEXT_SCALE})"><text y="${fmt(nameY * SVG_TEXT_SCALE)}" dy="${svgTextBaseline(name, nameSize)}" font-size="${fmt(nameSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(name)}</text>
+    <text y="${fmt(roleY * SVG_TEXT_SCALE)}" dy="${svgTextBaseline(player.role, roleSize)}" font-size="${fmt(roleSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(player.role)}</text></g>`;
 }
 
 // Everything needed to draw one rotation's players, in drawing order.
@@ -308,7 +336,7 @@ function positionBadgeMarkup(player, unitsPerPx) {
   const offset = -DIAMETER * 0.36;
   return `<g class="position-badge" transform="scale(${player.scale})" pointer-events="none"><g transform="translate(${fmt(offset)} ${fmt(offset)})">
     <circle r="${fmt(side / 2)}" fill="#fff" stroke="${COURT_COLORS.netBody}" stroke-width="${fmt(Math.max(0.75 * unitsPerPx, side * 0.055))}"/>
-    <text text-anchor="middle" dominant-baseline="central" font-family='${CHIP_FONT}' font-weight="700" font-size="${fmt(side * 0.68)}" fill="${COURT_COLORS.netBody}">${player.zone}</text></g></g>`;
+    <g transform="scale(${1 / SVG_TEXT_SCALE})"><text dy="${svgTextBaseline(String(player.zone), side * 0.68, 700)}" text-anchor="middle" dominant-baseline="alphabetic" font-family='${CHIP_FONT}' font-weight="700" font-size="${fmt(side * 0.68 * SVG_TEXT_SCALE)}" fill="${COURT_COLORS.netBody}">${player.zone}</text></g></g></g>`;
 }
 
 // A complete, static court for exports.
