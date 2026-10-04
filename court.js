@@ -120,7 +120,6 @@ function courtDefsMarkup(id) {
     ${shadow('shadow', DIAMETER * 0.04, DIAMETER * 0.08, 0.20)}
     ${shadow('shadow-selected', DIAMETER * 0.06, DIAMETER * 0.12, 0.28)}
     ${shadow('shadow-dragging', DIAMETER * 0.14, DIAMETER * 0.26, 0.38)}
-    ${shadow('text-shadow', 0, DIAMETER * 0.035, 0.30)}
     <radialGradient id="${id}-light" gradientUnits="userSpaceOnUse" cx="${SR.COURT_W / 2}" cy="${fmt(SR.COURT_D * 0.42)}" r="${reach * 0.75}">
       <stop offset="0" stop-color="#fff" stop-opacity="0.06"/>
       <stop offset="0.5" stop-color="#fff" stop-opacity="0.02"/>
@@ -253,7 +252,9 @@ function badgeMarkup(id, player, unitsPerPx) {
 function labelTextMarkup(player) {
   const d = DIAMETER;
   const nameSize = d * chipFontFraction(player.label);
-  const common = `text-anchor="middle" dominant-baseline="central" font-family='${CHIP_FONT}' font-weight="600" fill="#fff"`;
+  // WebKit can discard filtered SVG glyphs at this court-unit font size.
+  // A thin painted outline keeps the contrast without rasterizing the text.
+  const common = `text-anchor="middle" dominant-baseline="central" font-family='${CHIP_FONT}' font-weight="600" fill="#fff" stroke="#000" stroke-opacity="0.25" stroke-width="0.012" paint-order="stroke fill"`;
   if (player.label === player.role) {
     return `<text y="0" font-size="${fmt(nameSize)}" ${common}>${escapeXML(player.label.toUpperCase())}</text>`;
   }
@@ -318,7 +319,7 @@ function courtSVGString(index, { size, floorHref }) {
   const unitsPerPx = COURT_VIEW.width / size;
   const players = courtPlayers(index, { positions: rotation.positions, reduceMotion: true });
   const bodies = players.map(p => `<g transform="translate(${fmt(p.position.x)} ${fmt(p.position.y)})">${badgeMarkup(id, p, unitsPerPx)}</g>`).join('');
-  const labels = players.map(p => `<g transform="translate(${fmt(p.position.x + p.nudge.dx)} ${fmt(p.position.y + p.nudge.dy)})" filter="url(#${id}-text-shadow)">${labelTextMarkup(p)}</g>`).join('');
+  const labels = players.map(p => `<g transform="translate(${fmt(p.position.x + p.nudge.dx)} ${fmt(p.position.y + p.nudge.dy)})">${labelTextMarkup(p)}</g>`).join('');
   const badges = players.map(p => `<g transform="translate(${fmt(p.position.x)} ${fmt(p.position.y)})">${positionBadgeMarkup(p, unitsPerPx)}</g>`).join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${fmt(size * COURT_VIEW.height / COURT_VIEW.width)}" viewBox="${COURT_VIEW.x} ${COURT_VIEW.y} ${COURT_VIEW.width} ${COURT_VIEW.height}">
     ${courtDefsMarkup(id)}${courtFloorMarkup(id, floorHref)}
@@ -364,7 +365,6 @@ function createCourt(options) {
     bodyEls[zone] = body;
     const text = document.createElementNS(SVG_NS, 'g');
     text.setAttribute('class', 'player-label');
-    text.setAttribute('filter', `url(#${id}-text-shadow)`);
     labelsLayer.appendChild(text);
     labelEls[zone] = text;
     const badge = document.createElementNS(SVG_NS, 'g');

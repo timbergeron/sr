@@ -10,6 +10,11 @@ node scripts/version-assets.cjs
 node tests/parity.cjs
 ```
 
+Browser rendering checks include Chromium and WebKit at narrow phone widths in
+light and dark mode. They check actual painted label pixels, the setup title and
+the Team sheet. Run them with `npm ci`, `npx playwright install --with-deps webkit`,
+and `npm run test:browser` (set `SR_BROWSER=chromium` to check Chromium).
+
 Settings, court menus and new setups use **Smart Arrange** and **Court Position**.
 Only roles in the active system participate in court label collision checks, while
 all roster details remain stored and shared. Share links require numeric version 1;
