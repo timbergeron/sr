@@ -381,6 +381,8 @@ function createCourt(options) {
   const labelsLayer = svg.querySelector('.labels');
   const badgesLayer = svg.querySelector('.position-badges');
   const bodyEls = {};
+  const visualEls = {};
+  const hitEls = {};
   const labelEls = {};
   const badgeEls = {};
   for (const zone of POSITION_ZONES) {
@@ -389,8 +391,19 @@ function createCourt(options) {
     body.dataset.zone = zone;
     body.setAttribute('tabindex', '-1');
     body.setAttribute('role', 'button');
+    // Keep the touched node attached while selection and dragging redraw the
+    // badge. Safari delivers later touch events to the original touched node.
+    const visual = document.createElementNS(SVG_NS, 'g');
+    visual.setAttribute('pointer-events', 'none');
+    const hit = document.createElementNS(SVG_NS, 'circle');
+    hit.setAttribute('class', 'player-hit');
+    hit.setAttribute('fill', 'transparent');
+    hit.setAttribute('pointer-events', 'all');
+    body.append(visual, hit);
     bodiesLayer.appendChild(body);
     bodyEls[zone] = body;
+    visualEls[zone] = visual;
+    hitEls[zone] = hit;
     const text = document.createElementNS(SVG_NS, 'g');
     text.setAttribute('class', 'player-label');
     labelsLayer.appendChild(text);
@@ -434,6 +447,7 @@ function createCourt(options) {
       ? hintsMarkup(positions, activeZone, perPx) : '';
 
     svg.classList.toggle('is-interactive', interactive);
+    svg.classList.toggle('is-draggable', interactive && !options.zoneView());
     const focus = document.activeElement;
     const focusedZone = focus && svg.contains(focus) && focus.matches(':focus-visible') ? Number(focus.dataset.zone) : null;
     const focusRing = `<circle r="${fmt(DIAMETER * 0.74)}" fill="none" stroke="#0A84FF" stroke-width="${fmt(Math.max(2 * perPx, 0.05))}" pointer-events="none"/>`;
@@ -446,8 +460,10 @@ function createCourt(options) {
       const still = currentDrag && currentDrag.zone === player.zone;
       body.classList.toggle('is-held', Boolean(still));
       text.classList.toggle('is-held', Boolean(still));
-      body.innerHTML = (player.isSelected ? haloMarkup(`${id}-${player.zone}`, player, perPx) : '')
+      visualEls[player.zone].innerHTML = (player.isSelected ? haloMarkup(`${id}-${player.zone}`, player, perPx) : '')
         + (player.zone === focusedZone ? focusRing : '') + badgeMarkup(id, player, perPx);
+      hitEls[player.zone].setAttribute('r', fmt(player.isIllegal ? DIAMETER * 0.68 : SR.PLAYER_R));
+      hitEls[player.zone].setAttribute('transform', `scale(${player.scale})`);
       text.innerHTML = labelTextMarkup(player);
       const badge = badgeEls[player.zone];
       badge.style.transform = `translate(${fmt(x)}px, ${fmt(y)}px)`;
@@ -520,6 +536,7 @@ function createCourt(options) {
     drag = {
       zone,
       pointerId: event.pointerId,
+      pointerType: event.pointerType,
       startX: event.clientX,
       startY: event.clientY,
       grabX: current.x - point.x,
@@ -553,10 +570,16 @@ function createCourt(options) {
   svg.addEventListener('focusin', scheduleUpdate);
   svg.addEventListener('focusout', scheduleUpdate);
 
-  // A drag that starts on a player must not scroll or swipe the page.
+  // Keep Safari's page/rotation scrolling out of a player gesture, including
+  // moves after the finger leaves the disc. Empty court space still scrolls.
   svg.addEventListener('touchstart', event => {
-    if (options.interactive() && event.target.closest && event.target.closest('.player')) event.preventDefault();
-  }, { passive: false });
+    if (options.interactive() && !options.zoneView()
+      && event.target.closest && event.target.closest('.player')) event.preventDefault();
+  }, { passive: false, capture: true });
+  svg.addEventListener('touchmove', event => {
+    if (drag && drag.pointerType === 'touch' && isCurrentPlayerDrag(drag.edit)
+      && options.interactive() && !options.zoneView()) event.preventDefault();
+  }, { passive: false, capture: true });
 
   svg.addEventListener('keydown', event => {
     const target = event.target.closest && event.target.closest('.player');

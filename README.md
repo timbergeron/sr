@@ -13,7 +13,9 @@ node tests/parity.cjs
 Browser rendering checks include Chromium and WebKit at narrow phone widths in
 light and dark mode. They check painted player and position text, glyph centering
 for names and numbers, overlapping circles, exported courts, the setup title and
-the Team sheet. Run them with `npm ci`, `npx playwright install --with-deps webkit`,
+the Team sheet. Touch checks cover Safari event targeting, drag cancellation of
+scrolling, one-step undo, and native Chromium swipes on players and empty court
+space. Run them with `npm ci`, `npx playwright install --with-deps webkit`,
 and `npm run test:browser` (set `SR_BROWSER=chromium` to check Chromium).
 
 Settings, court menus and new setups use **Smart Arrange** and **Court Position**.

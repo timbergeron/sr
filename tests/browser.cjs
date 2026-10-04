@@ -5,6 +5,7 @@ const http = require('node:http');
 const path = require('node:path');
 const { webkit, chromium } = require('playwright');
 const { PNG } = require('pngjs');
+const { checkTouch } = require('./touch.cjs');
 const root = path.join(__dirname, '..');
 
 function pixelBounds(png, box, matches) {
@@ -162,6 +163,7 @@ async function main() {
         await context.close();
       }
     }
+    await checkTouch(browser, url, process.env.SR_BROWSER || 'webkit');
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 }
 main().catch(error => { console.error(error); process.exit(1); });

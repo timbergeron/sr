@@ -667,6 +667,8 @@ body.is-previewing .setup-button i { display: none; }
 .court-svg .player { outline: none; }
 .court-svg.is-interactive .player { cursor: grab; }
 .court-svg.is-interactive .player:active { cursor: grabbing; }
+/* Reserve a gesture before Safari decides between dragging and scrolling. */
+.court-svg.is-draggable .player-hit { touch-action: none; }
 .court-svg .player,
 .court-svg .player-label,
 .court-svg .player-position {
