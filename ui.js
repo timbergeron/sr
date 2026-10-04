@@ -407,11 +407,12 @@ function renderPasserBar() {
 // ---- Formation and display ----
 
 function renderFormationSection() {
-  $('auto-arrange-label').textContent = `Auto-arrange rotation ${ui.rotation + 1}`;
+  $('smart-arrange-label').textContent = `${SETUP_STYLE_TITLES.smart} Rotation ${ui.rotation + 1}`;
+  $('smart-arrange-all-label').textContent = `${SETUP_STYLE_TITLES.smart} All Rotations`;
   const placed = handPlacedCount();
   $('formation-footnote').textContent = placed === 0
-    ? 'Players are where the overlap rules suggest. Drag anyone to move them; changing who receives leaves them where you put them.'
-    : `You’ve placed ${placed} player${placed === 1 ? '' : 's'} by hand. They stay where you put them — auto-arrange asks for the suggestion back. Both are undoable.`;
+    ? 'Drag any player to move them. Smart Arrange suggests a receive formation using the selected passers; changing who receives keeps your hand-placed players where you put them.'
+    : `You’ve placed ${placed} player${placed === 1 ? '' : 's'} by hand. Smart Arrange replaces those positions with a suggested receive formation. Both are undoable.`;
 }
 
 function renderDisplaySection() {
@@ -611,7 +612,7 @@ function renderCards() {
 }
 
 function renderCourtViewButton(button, index) {
-  const view = ui.zoneView.has(index) ? 'Zones' : 'Receive';
+  const view = ui.zoneView.has(index) ? SETUP_STYLE_TITLES.courtPosition : 'Receive';
   button.textContent = `Court view · ${view} ▾`;
   button.setAttribute('aria-label', `Court view for rotation ${index + 1}, ${view}, player names and numbers ${state.showPlayerNamesAndNumbers ? 'on' : 'off'}, position badges ${state.showPositionBadges ? 'on' : 'off'}`);
 }
@@ -625,7 +626,7 @@ function setZoneView(index, enabled) {
     const position = state.rotations[index].positions[zone];
     const target = SR.courtPositions()[zone];
     return Math.abs(position.x - target.x) <= PLACEMENT_EPSILON && Math.abs(position.y - target.y) <= PLACEMENT_EPSILON;
-  })) showToast('Players are already in zone positions');
+  })) showToast(`Players are already in ${SETUP_STYLE_TITLES.courtPosition}.`);
 }
 
 function selectPlayer(index, zone) {
@@ -809,10 +810,10 @@ function editMenuItems() {
     { label: 'Undo', icon: 'fa-solid fa-arrow-rotate-left', disabled: !canUndo(), title: undoActionLabel(), action: undo },
     { section: `Rotation ${index + 1}` },
     { label: 'Reset', icon: 'fa-solid fa-arrows-rotate', title: `Restore standard court positions in rotation ${index + 1}`, action: () => resetCourt(index) },
-    { label: 'Smart Arrange', icon: 'fa-solid fa-wand-magic-sparkles', title: `Arrange rotation ${index + 1} using its selected passers`, action: () => smartArrange(index) },
+    { label: SETUP_STYLE_TITLES.smart, icon: 'fa-solid fa-wand-magic-sparkles', title: `Arrange rotation ${index + 1} using its selected passers`, action: () => smartArrange(index) },
     { section: 'All Rotations' },
     { label: 'Reset All Rotations', icon: 'fa-solid fa-arrows-rotate', title: 'Restore standard court positions in all six rotations', action: resetAllCourts },
-    { label: 'Smart Arrange All Rotations', icon: 'fa-solid fa-wand-magic-sparkles', title: "Arrange all six rotations using each rotation's selected passers", action: smartArrangeAll }
+    { label: `${SETUP_STYLE_TITLES.smart} All Rotations`, icon: 'fa-solid fa-wand-magic-sparkles', title: "Arrange all six rotations using each rotation's selected passers", action: smartArrangeAll }
   ];
 }
 
@@ -820,7 +821,7 @@ function courtViewMenuItems(index) {
   return [
     { section: 'This rotation' },
     { label: 'Receive', checked: !ui.zoneView.has(index), action: () => setZoneView(index, false) },
-    { label: 'Zones (Court Position)', checked: ui.zoneView.has(index), action: () => setZoneView(index, true) },
+    { label: SETUP_STYLE_TITLES.courtPosition, checked: ui.zoneView.has(index), action: () => setZoneView(index, true) },
     { section: 'All rotations' },
     { label: 'Player names & numbers', checked: state.showPlayerNamesAndNumbers, toggle: true,
       title: 'Show role codes without deleting player details', action: () => setShowPlayerNamesAndNumbers(!state.showPlayerNamesAndNumbers) },
@@ -975,8 +976,8 @@ function handleAction(action) {
     'export-png': () => runExport(exportImage),
     'export-pdf': () => runExport(exportPrintPDF),
     'open-link': openLinkDialog,
-    'auto-arrange': () => autoArrange(ui.rotation),
-    'auto-arrange-all': autoArrangeAll,
+    'smart-arrange': () => smartArrange(ui.rotation),
+    'smart-arrange-all': smartArrangeAll,
     'retry-save': retryPersistence,
     'export-backup': downloadBackup
   };

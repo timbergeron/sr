@@ -18,6 +18,9 @@ const LIBRARY_KEY = 'serve-receive.setups.v1';
 const UNDO_LIMIT = 30;
 // Wider than a share link's three-decimal rounding, far below anything a finger does.
 const PLACEMENT_EPSILON = 0.005;
+const SETUP_STYLE_TITLES = { smart: 'Smart Arrange', courtPosition: 'Court Position' };
+// Replacing a document or its system invalidates gestures, even after switching back.
+let dragContext = {};
 
 const state = {
   system: '5-1',
@@ -182,6 +185,7 @@ function currentShareHref() {
 // is trusted. Returns null when the payload can't describe a formation.
 function normalizePayload(raw) {
   if (!raw || typeof raw !== 'object') return null;
+  if (raw.v !== SHARE_VERSION) return null;
   if (!SYSTEMS.includes(raw.system)) return null;
   const system = raw.system;
   const valid = new Set(availablePassers(system));
@@ -322,6 +326,7 @@ function applySharedPositions(positionPayload) {
 }
 
 function applyState(payload) {
+  dragContext = {};
   adoptPayloadFields(payload);
   state.rotations = buildRotations();
   applySharedPositions(payload.positions);
@@ -612,10 +617,33 @@ function nudgePlayer(index, zone, dx, dy) {
   bumpShare();
 }
 
-function commitDrag(index, zone, snapshot) {
-  const rotation = state.rotations[index];
-  pushUndo(`Move ${label(occupantAt(rotation, zone).id)}`, snapshot, { rotation: index });
+function beginPlayerDrag(index, zone) {
+  if (!Number.isInteger(index) || !POSITION_ZONES.includes(zone) || !state.rotations[index]) return null;
+  return { context: dragContext, index, zone, snapshot: stateSnapshot(),
+    before: clonePositions(state.rotations[index].positions) };
+}
+
+function isCurrentPlayerDrag(drag) {
+  return Boolean(drag && drag.context === dragContext);
+}
+
+function updatePlayerDrag(drag, point) {
+  if (!isCurrentPlayerDrag(drag)) return false;
+  setPosition(drag.index, drag.zone, point);
+  return true;
+}
+
+function finishPlayerDrag(drag) {
+  if (!isCurrentPlayerDrag(drag)) return false;
+  const rotation = state.rotations[drag.index];
+  if (!rotation || !POSITION_ZONES.some(zone => {
+    const before = drag.before[zone];
+    const after = rotation.positions[zone];
+    return before && after && (before.x !== after.x || before.y !== after.y);
+  })) return false;
+  pushUndo(`Move ${label(occupantAt(rotation, drag.zone).id)}`, drag.snapshot, { rotation: drag.index });
   bumpShare();
+  return true;
 }
 
 // ---- Edits ----
@@ -623,6 +651,7 @@ function commitDrag(index, zone, snapshot) {
 function setSystem(system) {
   if (system === state.system || !SYSTEMS.includes(system)) return;
   pushUndo('System');
+  dragContext = {};
   state.system = system;
   const valid = new Set(availablePassers(system));
   const filtered = [...state.passers].filter(id => valid.has(id));
@@ -791,6 +820,7 @@ function clearUndoNotice() {
 }
 
 function forgetHistory() {
+  dragContext = {};
   undoStack.length = 0;
   lastRearrangement = null;
   lastUndo = null;

@@ -19,10 +19,10 @@
 </script>
 <link rel="icon" type="image/png" href="assets/favicon-64.png" />
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v=d998c9900685" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
-<script src="qrcode.min.js" defer></script>
+<script src="qrcode.min.js?v=c541ef063278" defer></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -78,8 +78,8 @@
       <section class="group" aria-labelledby="formation-heading">
         <h2 id="formation-heading">Formation</h2>
         <div class="card list">
-          <button class="list-button" type="button" data-action="auto-arrange"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i><span id="auto-arrange-label">Auto-arrange rotation 1</span></button>
-          <button class="list-button" type="button" data-action="auto-arrange-all"><i class="fa-solid fa-wand-sparkles" aria-hidden="true"></i>Auto-arrange all six</button>
+          <button class="list-button" type="button" data-action="smart-arrange"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i><span id="smart-arrange-label">Smart Arrange Rotation 1</span></button>
+          <button class="list-button" type="button" data-action="smart-arrange-all"><i class="fa-solid fa-wand-sparkles" aria-hidden="true"></i><span id="smart-arrange-all-label">Smart Arrange All Rotations</span></button>
         </div>
         <p class="footnote" id="formation-footnote"></p>
       </section>
@@ -193,7 +193,7 @@
     <p class="footnote">Starts with fresh formations. Your current setup is saved.</p>
     <p class="field-label">Starting layout</p>
     <div class="segmented" id="new-setup-style" role="radiogroup" aria-label="Starting layout">
-      <button type="button" class="segment" role="radio" data-value="smart">Smart Setup</button>
+      <button type="button" class="segment" role="radio" data-value="smart">Smart Arrange</button>
       <button type="button" class="segment" role="radio" data-value="courtPosition">Court Position</button>
     </div>
     <p class="footnote" id="new-setup-style-detail"></p>
@@ -257,11 +257,11 @@
   </form>
 </dialog>
 
-<script src="formation.js"></script>
-<script src="app.js"></script>
-<script src="labels.js"></script>
-<script src="court.js"></script>
-<script src="export.js"></script>
-<script src="ui.js"></script>
+<script src="formation.js?v=70a18293dab8"></script>
+<script src="app.js?v=2572cd9b04f3"></script>
+<script src="labels.js?v=d43dcb407412"></script>
+<script src="court.js?v=3e91de142e1b"></script>
+<script src="export.js?v=b7c5540016eb"></script>
+<script src="ui.js?v=5c4d61f1da0f"></script>
 </body>
 </html>

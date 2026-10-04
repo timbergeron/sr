@@ -54,15 +54,16 @@ let chipLabelCache = { key: null, labels: null };
 
 // What each player shows on a disc, guaranteed distinct.
 function courtLabels() {
-  const key = JSON.stringify([state.playerLabels, state.playerNumbers, state.showPlayerNamesAndNumbers]);
+  const ids = availablePassers();
+  const key = JSON.stringify([state.system, state.playerLabels, state.playerNumbers, state.showPlayerNamesAndNumbers]);
   if (chipLabelCache.key === key) return chipLabelCache.labels;
   if (!state.showPlayerNamesAndNumbers) {
-    const labels = Object.fromEntries(PLAYER_IDS.map(id => [id, SR.ROLES[id].label]));
+    const labels = Object.fromEntries(ids.map(id => [id, SR.ROLES[id].label]));
     chipLabelCache = { key, labels };
     return labels;
   }
   const token = {};
-  for (const id of PLAYER_IDS) {
+  for (const id of ids) {
     const custom = String(state.playerLabels[id] || '').trim().toUpperCase();
     const number = state.playerNumbers[id];
     if (number) {
@@ -90,11 +91,11 @@ function courtLabels() {
 
   // Two players can land on the same token. Whoever isn't already on their own
   // role code moves to it; role codes are distinct, so this settles.
-  for (let pass = 0; pass < PLAYER_IDS.length; pass++) {
+  for (let pass = 0; pass < ids.length; pass++) {
     const counts = {};
     for (const value of Object.values(token)) counts[value.toLowerCase()] = (counts[value.toLowerCase()] || 0) + 1;
     let moved = false;
-    for (const id of PLAYER_IDS) {
+    for (const id of ids) {
       if (counts[token[id].toLowerCase()] > 1 && token[id] !== SR.ROLES[id].label) {
         token[id] = SR.ROLES[id].label;
         moved = true;

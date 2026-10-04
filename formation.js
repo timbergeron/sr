@@ -498,6 +498,17 @@ function validateOverlap(positions) {
 // step is a fifth of the rounding grid, so it never reaches the next real value.
 function separateTies(positions) {
   const step = 0.0002;
+  const pad = PLAYER_R + 0.05;
+  // Clamp first so an edge run can spread inward without collapsing again.
+  clampToCourt(positions);
+  // Court coordinates are positive doubles. Leave one representable value
+  // between a repaired run and an already distinct neighbour, as on native.
+  const bits = new DataView(new ArrayBuffer(8));
+  const adjacent = (value, direction) => {
+    bits.setFloat64(0, value);
+    bits.setBigUint64(0, bits.getBigUint64(0) + BigInt(direction));
+    return bits.getFloat64(0);
+  };
   for (const trio of ROW_TRIOS) {
     const present = trio.filter(z => positions[z]);
     let index = 0;
@@ -506,15 +517,28 @@ function separateTies(positions) {
       let next = index + 1;
       while (next < present.length && positions[present[next]].x === base) next++;
       if (next - index > 1) {
-        present.slice(index, next).forEach((z, offset) => { positions[z].x = base + offset * step; });
+        let lower = pad;
+        let upper = COURT_W - pad;
+        if (index > 0 && positions[present[index - 1]].x < base) {
+          lower = Math.max(lower, adjacent(positions[present[index - 1]].x, 1));
+        }
+        if (next < present.length && positions[present[next]].x > base) {
+          upper = Math.min(upper, adjacent(positions[present[next]].x, -1));
+        }
+        const spacing = Math.min(step, (upper - lower) / (next - index - 1));
+        const start = Math.min(Math.max(base, lower), upper - (next - index - 1) * spacing);
+        present.slice(index, next).forEach((z, offset) => { positions[z].x = start + offset * spacing; });
       }
       index = next;
     }
   }
   for (const [f, b] of COL_PAIRS) {
-    if (positions[f] && positions[b] && positions[f].y === positions[b].y) positions[b].y += step;
+    if (positions[f] && positions[b] && positions[f].y === positions[b].y) {
+      const start = Math.min(positions[f].y, COURT_D - pad - step);
+      positions[f].y = start;
+      positions[b].y = start + step;
+    }
   }
-  clampToCourt(positions);
 }
 
 // The constraints that bind one zone to its neighbours, and whether each holds.

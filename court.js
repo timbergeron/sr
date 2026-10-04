@@ -392,8 +392,9 @@ function createCourt(options) {
     if (!rotation) return;
     const positions = displayedPositions();
     const selectedZone = options.selectedZone();
-    const draggingZone = drag && drag.lifted ? drag.zone : null;
-    const activeZone = drag ? drag.zone : selectedZone;
+    const currentDrag = drag && isCurrentPlayerDrag(drag.edit) ? drag : null;
+    const draggingZone = currentDrag && currentDrag.lifted ? currentDrag.zone : null;
+    const activeZone = currentDrag ? currentDrag.zone : selectedZone;
     const interactive = options.interactive();
     const perPx = unitsPerPx();
     const players = courtPlayers(index, {
@@ -414,7 +415,7 @@ function createCourt(options) {
       const { x, y } = player.position;
       body.style.transform = `translate(${fmt(x)}px, ${fmt(y)}px)`;
       text.style.transform = `translate(${fmt(x + player.nudge.dx)}px, ${fmt(y + player.nudge.dy)}px) scale(${player.scale})`;
-      const still = drag && drag.zone === player.zone;
+      const still = currentDrag && currentDrag.zone === player.zone;
       body.classList.toggle('is-held', Boolean(still));
       text.classList.toggle('is-held', Boolean(still));
       body.innerHTML = (player.isSelected ? haloMarkup(`${id}-${player.zone}`, player, perPx) : '')
@@ -467,18 +468,12 @@ function createCourt(options) {
     if (!drag) return;
     const finished = drag;
     drag = null;
-    const rotation = state.rotations[index];
-    const moved = finished.lifted && rotation && POSITION_ZONES.some(zone => {
-      const before = finished.before[zone];
-      const after = rotation.positions[zone];
-      return before && after && (before.x !== after.x || before.y !== after.y);
-    });
-    if (moved) commitDrag(index, finished.zone, finished.snapshot);
-    else update();
+    if (!finished.lifted || !finishPlayerDrag(finished.edit)) update();
     options.interactionEnded();
   }
 
   svg.addEventListener('pointerdown', event => {
+    if (drag) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     const target = event.target.closest && event.target.closest('.player');
     if (!options.interactive()) return;
@@ -488,7 +483,8 @@ function createCourt(options) {
       return;
     }
     const zone = Number(target.dataset.zone);
-    const rotation = state.rotations[index];
+    const edit = beginPlayerDrag(index, zone);
+    if (!edit) return;
     const current = displayedPositions()[zone];
     const point = toCourtPoint(event);
     event.preventDefault();
@@ -500,8 +496,7 @@ function createCourt(options) {
       startY: event.clientY,
       grabX: current.x - point.x,
       grabY: current.y - point.y,
-      snapshot: stateSnapshot(),
-      before: clonePositions(rotation.positions),
+      edit,
       lifted: false
     };
     options.activate();
@@ -509,14 +504,15 @@ function createCourt(options) {
   });
 
   svg.addEventListener('pointermove', event => {
-    if (!drag || drag.pointerId !== event.pointerId || options.zoneView()) return;
+    if (!drag || drag.pointerId !== event.pointerId || !isCurrentPlayerDrag(drag.edit)
+      || !options.interactive() || options.zoneView()) return;
     // Selection is not movement: until the pointer travels, nothing is re-solved.
     if (!drag.lifted) {
       if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) <= 4) return;
       drag.lifted = true;
     }
     const point = toCourtPoint(event);
-    setPosition(index, drag.zone, { x: point.x + drag.grabX, y: point.y + drag.grabY });
+    updatePlayerDrag(drag.edit, { x: point.x + drag.grabX, y: point.y + drag.grabY });
     scheduleUpdate();
   });
 
