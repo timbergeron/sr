@@ -73,7 +73,7 @@ async function checkTouch(browser, url, engine) {
       const prepare = async zone => page.evaluate(zone => {
         setRotation(0); setZoneView(0, false); resetAllCourts(); forgetHistory(); window.scrollTo(0, 40);
         const el = ui.courts[0].element;
-        const p = zone ? state.rotations[0].positions[zone] : { x: 4.5, y: 4 };
+        const p = typeof zone === 'number' ? state.rotations[0].positions[zone] : zone || { x: 4.5, y: 4 };
         const point = new DOMPoint(p.x, p.y).matrixTransform(el.getScreenCTM());
         return { point: { x: point.x, y: point.y }, positions: JSON.stringify(stateSnapshot().positions),
           y: window.scrollY, x: document.querySelector('.courts-inner').scrollLeft };
@@ -93,9 +93,10 @@ async function checkTouch(browser, url, engine) {
       const before = await prepare(null);
       await swipe(before.point, 0, -60);
       await page.waitForFunction(y => window.scrollY > y + 2, before.y);
-      const floor = await prepare(null);
-      await swipe(floor.point, -100, 0);
-      await page.waitForFunction(() => ui.rotation === 1);
+      // Cross half a card so scroll snapping commits the rotation change.
+      const floor = await prepare({ x: 7.5, y: 4 });
+      await swipe(floor.point, -240, 0);
+      await page.waitForFunction(() => ui.rotation > 0);
       await session.detach();
     }
     console.log(`PASS: ${engine}: native touchstart stays attached and blocks scrolling; drag releases cleanly and undoes once; empty/static courts allow scrolling`);
