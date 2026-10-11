@@ -8,6 +8,7 @@ const localURL = 'http://sr.test/sr/';
 async function routeSite(page, url) {
   await page.route('**/*', async route => {
     const requested = route.request().url();
+    if (requested.startsWith('blob:') || requested.startsWith('data:')) return route.continue();
     if (!requested.startsWith(url)) return route.abort();
     if (url !== localURL) return route.continue();
     const name = decodeURIComponent(new URL(requested).pathname.slice('/sr/'.length)) || 'index.html';

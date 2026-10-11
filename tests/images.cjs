@@ -46,7 +46,9 @@ async function main() {
       const originalLink = await page.evaluate(() => shareHash());
       const originalSetup = await page.evaluate(() => library.currentID);
       await choose(page, playerButton, portrait);
-      await page.locator('#photo-editor').waitFor({ state: 'visible' });
+      await page.waitForFunction(() => $('photo-editor').open || $('toast').classList.contains('visible'));
+      assert.equal(await page.locator('#photo-editor').evaluate(el => el.open), true,
+        `Photo import failed: ${await page.locator('#toast').textContent()}`);
       assert.deepEqual(await page.evaluate(() => photoDraft.crop), { centerX: 0.5, centerY: 0.5, zoom: 1 });
       await setRange(page.locator('#photo-zoom'), 2);
       const viewport = page.locator('#photo-viewport');
