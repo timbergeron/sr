@@ -142,6 +142,7 @@ function courtDefsMarkup(id) {
   const reach = Math.max(SR.COURT_W, SR.COURT_D);
   const vignetteStart = 0.35 / 0.9;
   return `<defs>${gradients}
+    <clipPath id="${id}-photo-clip"><circle r="${fmt(DIAMETER / 2 - DIAMETER * BADGE.rim)}"/></clipPath>
     ${shadow('shadow', DIAMETER * 0.08, 0.20)}
     ${shadow('shadow-selected', DIAMETER * 0.12, 0.28)}
     ${shadow('shadow-dragging', DIAMETER * 0.26, 0.38)}
@@ -186,12 +187,19 @@ function courtFloorMarkup(id, floorHref) {
     <rect x="0" y="0" width="${W}" height="${D}" fill="url(#${id}-light)"/>
     <rect x="0" y="0" width="${W}" height="${D}" fill="url(#${id}-wash)"/>
     <rect x="0" y="0" width="${W}" height="${D}" fill="url(#${id}-vignette)"/>
+    <g class="team-watermark" pointer-events="none">${teamWatermarkMarkup()}</g>
     <rect x="0" y="0" width="${W}" height="0.16" fill="url(#${id}-net-shade)" style="mix-blend-mode:multiply"/>
     <line x1="0" y1="${SR.ATTACK_LINE}" x2="${W}" y2="${SR.ATTACK_LINE}" stroke="${COURT_COLORS.line}" stroke-opacity="0.9" stroke-width="${lineWidth}"/>
     <rect x="0" y="0" width="${W}" height="${D}" fill="none" stroke="${COURT_COLORS.line}" stroke-width="${lineWidth}"/>
     <rect x="0" y="-0.13" width="${W}" height="0.13" fill="${COURT_COLORS.netBody}"/>
     <rect x="0" y="-0.13" width="${W}" height="0.07" rx="0.035" fill="${COURT_COLORS.netBand}"/>
   </g>`;
+}
+
+function teamWatermarkMarkup() {
+  const { teamLogo, watermarkOpacity } = state.images;
+  if (!teamLogo || watermarkOpacity <= 0) return '';
+  return `<image class="team-logo" href="${escapeXML(teamLogo)}" x="${SR.COURT_W * 0.18}" y="${SR.COURT_D * 0.18}" width="${SR.COURT_W * 0.64}" height="${SR.COURT_D * 0.64}" preserveAspectRatio="xMidYMid meet" opacity="${fmt(watermarkOpacity)}"/>`;
 }
 
 function watermarkMarkup(name) {
@@ -265,6 +273,7 @@ function badgeMarkup(id, player, unitsPerPx) {
   if (player.overlapsNeighbour) markup += `<circle r="${fmt(d * 1.13 / 2)}" fill="${COURT_COLORS.floor}"/>`;
   if (player.isPasser) markup += `<circle r="${fmt(d / 2)}" fill="#fff"/>`;
   markup += `<circle r="${fmt(fillRadius)}" fill="url(#${id}-grad-${player.family})"/>`;
+  if (player.photo) markup += `<image class="player-photo" href="${escapeXML(player.photo)}" x="${fmt(-fillRadius)}" y="${fmt(-fillRadius)}" width="${fmt(fillRadius * 2)}" height="${fmt(fillRadius * 2)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id}-photo-clip)"/>`;
   markup += `<circle r="${fmt(fillRadius - edgeWidth / 2)}" fill="none" stroke="${roleEdgeColor(player.family)}" stroke-width="${fmt(edgeWidth)}"/>`;
   if (player.row) {
     markup += `<path d="${rowArcPath(indicatorRadius, player.row)}" fill="none" stroke="#fff" stroke-opacity="${player.row === 'B' ? 0.45 : 0.35}" stroke-width="${fmt(d * BADGE.indicatorStroke)}" stroke-linecap="round"/>`;
@@ -283,8 +292,15 @@ function labelTextMarkup(player) {
   // WebKit can discard filtered SVG glyphs at this court-unit font size.
   // A thin painted outline keeps the contrast without rasterizing the text.
   const common = `text-anchor="middle" dominant-baseline="alphabetic" font-family='${CHIP_FONT}' font-weight="600" fill="#fff" stroke="#000" stroke-opacity="0.25" stroke-width="${0.012 * SVG_TEXT_SCALE}" paint-order="stroke fill"`;
+  const backing = height => {
+    if (!player.photo) return '';
+    const nameWidth = d * chipTextWidth(name) * chipFontFraction(name) / nominalChipFontFraction(name);
+    const roleWidth = d * chipTextWidth(player.role) * ROLE_CHIP_FONT_FRACTION / nominalChipFontFraction(player.role);
+    const width = Math.max(nameWidth, player.label === player.role ? 0 : roleWidth) + d * 0.07;
+    return `<rect class="photo-caption" x="${fmt(-width / 2)}" y="${fmt(-height / 2)}" width="${fmt(width)}" height="${fmt(height)}" rx="${fmt(height / 2)}" fill="#000" fill-opacity="0.72"/>`;
+  };
   if (player.label === player.role) {
-    return `<g transform="scale(${1 / SVG_TEXT_SCALE})"><text y="0" dy="${svgTextBaseline(name, nameSize)}" font-size="${fmt(nameSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(name)}</text></g>`;
+    return `${backing(nameSize * 1.19 + d * 0.03)}<g transform="scale(${1 / SVG_TEXT_SCALE})"><text y="0" dy="${svgTextBaseline(name, nameSize)}" font-size="${fmt(nameSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(name)}</text></g>`;
   }
   const lineHeight = 1.19;
   const nameHeight = nameSize * lineHeight;
@@ -294,7 +310,7 @@ function labelTextMarkup(player) {
   const total = nameHeight + spacing + roleHeight;
   const nameY = -total / 2 + nameHeight / 2;
   const roleY = total / 2 - roleHeight / 2 - d * roleLiftFraction(player.label);
-  return `<g transform="scale(${1 / SVG_TEXT_SCALE})"><text y="${fmt(nameY * SVG_TEXT_SCALE)}" dy="${svgTextBaseline(name, nameSize)}" font-size="${fmt(nameSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(name)}</text>
+  return `${backing(total + d * 0.03)}<g transform="scale(${1 / SVG_TEXT_SCALE})"><text y="${fmt(nameY * SVG_TEXT_SCALE)}" dy="${svgTextBaseline(name, nameSize)}" font-size="${fmt(nameSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(name)}</text>
     <text y="${fmt(roleY * SVG_TEXT_SCALE)}" dy="${svgTextBaseline(player.role, roleSize)}" font-size="${fmt(roleSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(player.role)}</text></g>`;
 }
 
@@ -313,6 +329,7 @@ function courtPlayers(index, { positions, activeZone = null, selectedZone = null
     return {
       zone,
       occ,
+      photo: state.images.players[occ.id] || null,
       position: here,
       nudge: nudges[zone] || { dx: 0, dy: 0 },
       family: SR.ROLES[occ.id].cls,
@@ -376,6 +393,7 @@ function createCourt(options) {
     ${options.watermark ? watermarkMarkup(`R${index + 1}`) : ''}
     <g class="spots"></g><g class="hints" pointer-events="none"></g><g class="bodies"></g><g class="labels" pointer-events="none"></g><g class="position-badges" pointer-events="none"></g>`;
   const spotsLayer = svg.querySelector('.spots');
+  const teamWatermarkLayer = svg.querySelector('.team-watermark');
   const hintsLayer = svg.querySelector('.hints');
   const bodiesLayer = svg.querySelector('.bodies');
   const labelsLayer = svg.querySelector('.labels');
@@ -416,6 +434,8 @@ function createCourt(options) {
 
   let drag = null;
   let frame = 0;
+  let teamLogo = state.images.teamLogo;
+  let logoOpacity = state.images.watermarkOpacity;
 
   function displayedPositions() {
     const rotation = state.rotations[index];
@@ -443,6 +463,11 @@ function createCourt(options) {
     });
 
     spotsLayer.innerHTML = state.showSpotNumbers ? spotNumbersMarkup() : '';
+    if (teamLogo !== state.images.teamLogo || logoOpacity !== state.images.watermarkOpacity) {
+      teamLogo = state.images.teamLogo;
+      logoOpacity = state.images.watermarkOpacity;
+      teamWatermarkLayer.innerHTML = teamWatermarkMarkup();
+    }
     hintsLayer.innerHTML = state.showHints && activeZone && !options.zoneView()
       ? hintsMarkup(positions, activeZone, perPx) : '';
 

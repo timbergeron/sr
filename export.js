@@ -177,12 +177,23 @@ async function exportImage() {
 
 // The court as line art: black on white, discs outlined so a monochrome printer
 // still separates them.
-function drawPrintCourt(ctx, index, left, top, width, height) {
+function drawPrintCourt(ctx, index, left, top, width, height, artwork = { players: {}, teamLogo: null }) {
   const rotation = state.rotations[index];
   const unit = Math.min(width, height) / SR.COURT_W;
   const originX = left + (width - SR.COURT_W * unit) / 2;
   const originY = top + (height - SR.COURT_D * unit) / 2;
   const point = p => ({ x: originX + p.x * unit, y: originY + p.y * unit });
+
+  if (artwork.teamLogo && state.images.watermarkOpacity > 0) {
+    const image = artwork.teamLogo;
+    const side = Math.min(SR.COURT_W, SR.COURT_D) * unit * 0.64;
+    const scale = side / Math.max(image.naturalWidth, image.naturalHeight);
+    const w = image.naturalWidth * scale, h = image.naturalHeight * scale;
+    ctx.save();
+    ctx.globalAlpha = state.images.watermarkOpacity;
+    ctx.drawImage(image, originX + (SR.COURT_W * unit - w) / 2, originY + (SR.COURT_D * unit - h) / 2, w, h);
+    ctx.restore();
+  }
 
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 1;
@@ -209,6 +220,13 @@ function drawPrintCourt(ctx, index, left, top, width, height) {
     ctx.arc(centre.x, centre.y, radius, 0, Math.PI * 2);
     ctx.fillStyle = '#fff';
     ctx.fill();
+    const photo = artwork.players[occupantAt(rotation, zone).id];
+    if (photo) {
+      ctx.save();
+      ctx.clip();
+      ctx.drawImage(photo, centre.x - radius, centre.y - radius, radius * 2, radius * 2);
+      ctx.restore();
+    }
     ctx.strokeStyle = '#000';
     ctx.lineWidth = passer ? 2 : 0.9;
     ctx.stroke();
@@ -237,6 +255,12 @@ function drawPrintCourt(ctx, index, left, top, width, height) {
     const showsRole = text !== role;
     const nudge = offsets[zone] || { dx: 0, dy: 0 };
     ctx.font = `600 ${Math.max(6, radius * 2 * chipFontFraction(text))}px ${SYSTEM_FONT}`;
+    if (artwork.players[occ.id]) {
+      const w = Math.max(ctx.measureText(text).width, radius * (showsRole ? 0.9 : 0)) + radius * 0.2;
+      const h = radius * (showsRole ? 1.5 : 1);
+      roundedRect(ctx, centre.x + nudge.dx * unit - w / 2, centre.y + nudge.dy * unit - h / 2, w, h, h / 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill(); ctx.fillStyle = '#000';
+    }
     ctx.fillText(text, centre.x + nudge.dx * unit, centre.y + nudge.dy * unit - (showsRole ? radius * 0.24 : 0));
     if (showsRole) {
       ctx.font = `600 ${radius * 2 * ROLE_CHIP_FONT_FRACTION}px ${SYSTEM_FONT}`;
@@ -275,6 +299,11 @@ async function exportPrintPDF() {
   canvas.width = pageWidth * scale;
   canvas.height = pageHeight * scale;
   const ctx = canvas.getContext('2d');
+  const artwork = { players: {}, teamLogo: null };
+  await Promise.all([
+    ...Object.entries(state.images.players).map(async ([id, data]) => { artwork.players[id] = await loadImage(data); }),
+    state.images.teamLogo ? loadImage(state.images.teamLogo).then(image => { artwork.teamLogo = image; }) : Promise.resolve()
+  ]);
   ctx.scale(scale, scale);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, pageWidth, pageHeight);
@@ -319,7 +348,7 @@ async function exportPrintPDF() {
     const count = onCourtPasserCount(i);
     ctx.font = `9px ${SYSTEM_FONT}`;
     ctx.fillText(`Setter: ${courtLabel(rotation.setter.setterId)} · ${warningPrefix(count)}${count} receiving`, x, y + 24);
-    drawPrintCourt(ctx, i, x, y + 30, cellWidth, courtHeight);
+    drawPrintCourt(ctx, i, x, y + 30, cellWidth, courtHeight, artwork);
   });
 
   let keyTop = gridTop + cellHeight * 2 + 10 + 10;

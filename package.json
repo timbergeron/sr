@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "test": "node tests/parity.cjs",
-    "test:browser": "node tests/browser.cjs"
+    "test:browser": "node tests/browser.cjs && node tests/images.cjs"
   },
   "devDependencies": {
     "playwright": "1.63.0",

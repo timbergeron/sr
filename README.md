@@ -17,12 +17,32 @@ the Team sheet. Touch checks cover Safari event targeting, drag cancellation of
 scrolling, one-step undo, and native Chromium swipes on players and empty court
 space. Run them with `npm ci`, `npx playwright install --with-deps webkit`,
 and `npm run test:browser` (set `SR_BROWSER=chromium` to check Chromium).
+The artwork checks also cover phone and desktop uploads, crop gestures and
+keyboard movement, cancel/re-edit, transparent logos, persistence, and actual
+SVG/PNG/PDF canvas rendering. Tests route the local files through a browser origin
+without needing a localhost server.
 
 Settings, court menus and new setups use **Smart Arrange** and **Court Position**.
 Only roles in the active system participate in court label collision checks, while
 all roster details remain stored and shared. Share links require numeric version 1;
 boundary ties caused by coordinate rounding are separated inward. Player drags are
 scoped to the document and system where they began.
+
+The web app includes the player-photo and team-watermark changes from native
+revision `f467329` (2026-10-10). In **Your team**, use **Add photo** beside a
+position, then drag or pinch to frame it and choose **Use Photo**. A zoom slider,
+arrow-key crop movement, and **Reset crop** are available. **Adjust crop** reopens
+the retained source; canceling preserves the saved photo. Photos follow the
+displayed roster position through all six rotations, with labels and role and
+receiver borders above them.
+
+Under **Court watermark**, add a team logo and set its opacity from 0% to 40%
+(16% by default). Transparent logos stay transparent. Artwork is resized and
+re-encoded before saving, stays with the setup through reloads, duplication and
+full-library backups, and appears in image and PDF exports. New setups and
+incoming share previews start without artwork. Share-link bytes are unchanged.
+Browser storage limits still apply; failed saves keep the in-memory setup and
+show the existing retry and backup controls.
 
 The canonical host serves this directory with nginx. Deploy the tracked HTML,
 JavaScript, CSS and `assets/`, `privacy/`, and `support/` files, publishing

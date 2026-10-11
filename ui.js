@@ -84,6 +84,7 @@ function initPage() {
   buildCourts();
   buildLegend();
   wireControls();
+  wireImageControls();
   onStateChange(render);
   openLinkFromAddressBar();
   render();
@@ -122,6 +123,7 @@ function render() {
   renderSaveBanners();
   renderImportPreview();
   renderRoster();
+  renderImageControls();
   renderSystemControls();
   renderPasserSection();
   renderFormationSection();
@@ -189,6 +191,7 @@ function renderRoster() {
     preview.hidden = !hasCustomLabel(id) && !state.playerNumbers[id];
     preview.querySelector('.preview-name').textContent = label(id);
     preview.setAttribute('aria-label', `${label(id)}, ${SR.ROLES[id].label}`);
+    renderImageButton(row.querySelector('.image-button'), id);
   }
 }
 
@@ -228,7 +231,10 @@ function buildRosterRow(id) {
   number.autocomplete = 'off';
   number.setAttribute('aria-label', `Jersey number, ${role.tag}`);
   numberField.append(element('span', '', 'Number'), number);
-  fields.append(nameField, numberField);
+  const photo = element('button', 'image-button');
+  photo.type = 'button';
+  photo.addEventListener('click', () => openImageMenu(photo, id));
+  fields.append(nameField, numberField, photo);
 
   const preview = element('span', 'roster-preview');
   preview.setAttribute('role', 'img');
@@ -1009,6 +1015,7 @@ function wireControls() {
       return;
     }
     if (event.key === 'Escape') {
+      if (document.querySelector('dialog[open]')) return;
       if (!menu.hidden) closeMenu(true);
       else if (document.body.classList.contains('settings-open')) closeSettings();
       else if (ui.selection) selectPlayer(ui.selection.rotation, null);

@@ -1,10 +1,11 @@
 const assert = require('node:assert/strict');
+const { routeSite } = require('./site.cjs');
 
 async function checkTouch(browser, url, engine) {
   const context = await browser.newContext({ viewport: { width: 390, height: 640 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
   const page = await context.newPage();
   try {
-    await page.route('https://**/*', route => route.request().url().startsWith(url) ? route.continue() : route.abort());
+    await routeSite(page, url);
     await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => ui.courts.length === 6);
     await page.evaluate(() => { resetAllCourts(); forgetHistory(); });

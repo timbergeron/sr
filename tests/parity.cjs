@@ -5,13 +5,15 @@ const vm = require('node:vm');
 const { test } = require('node:test');
 const root = path.join(__dirname, '..');
 
-function app() {
+function app(saved = null) {
+  const stored = new Map(saved ? [['serve-receive.setups.v1', saved]] : []);
   const context = vm.createContext({ TextEncoder, TextDecoder, btoa, atob,
-    window: { matchMedia: () => ({ matches: false }) }, document: { addEventListener() {}, createElement(tag) {
+    window: { localStorage: { getItem: key => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) },
+      matchMedia: () => ({ matches: false }) }, document: { addEventListener() {}, createElement(tag) {
       assert.equal(tag, 'canvas');
       return { getContext: () => ({ measureText: text => ({ width: text.length * 12 }) }) };
     } } });
-  for (const file of ['formation.js', 'app.js', 'labels.js', 'court.js', 'export.js', 'ui.js']) {
+  for (const file of ['formation.js', 'app.js', 'images.js', 'labels.js', 'court.js', 'export.js', 'ui.js']) {
     vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), context);
     if (file === 'formation.js') context.SR = context.window.SR;
   }
@@ -225,4 +227,189 @@ test('print court shows role codes and six position badges while retaining roste
     drawPrintCourt(printContext, 0, 0, 0, 180, 180);`);
   assert.deepEqual(clean(run('printedText')), ['S', 'O1', 'M1', 'OP', 'O2', 'L', '1', '2', '3', '4', '5', '6']);
   assert.equal(run("rosterLabel('O1')"), 'RILEY · #07');
+});
+
+const photo = 'data:image/png;base64,aGVsbG8=';
+const source = 'data:image/jpeg;base64,c291cmNl';
+
+test('crop geometry matches native framing, bounds and maximum zoom', () => {
+  const run = app();
+  assert.deepEqual(clean(run('photoCropRect({}, 1200, 800)')), { x: 200, y: 0, width: 800, height: 800 });
+  assert.deepEqual(clean(run('photoCropRect({ centerX: 0.5, centerY: 0.5, zoom: 2 }, 800, 1200)')),
+    { x: 200, y: 400, width: 400, height: 400 });
+  for (const [w, h] of [[1200, 800], [800, 1200], [512, 512]]) {
+    for (const zoom of [-1, 1, 2, 8, 99, NaN, Infinity]) {
+      run(`var boundedCrop = photoCropRect({ centerX: -1, centerY: 2, zoom: ${zoom} }, ${w}, ${h})`);
+      const rect = clean(run('boundedCrop'));
+      assert.ok(rect.x >= 0 && rect.y >= 0 && rect.x + rect.width <= w && rect.y + rect.height <= h);
+      assert.equal(rect.width, rect.height);
+      assert.ok(rect.width >= Math.min(w, h) / 8 && rect.width <= Math.min(w, h));
+    }
+  }
+  assert.deepEqual(clean(run('clampedPhotoCrop({centerX: NaN, zoom: Infinity}, 0, 800)')), { centerX: 0.5, centerY: 0.5, zoom: 1 });
+  assert.deepEqual(clean(run('photoCropRect({}, Infinity, 800)')), { x: 0, y: 0, width: 0, height: 0 });
+});
+
+test('artwork survives reload, duplication and backups while links stay byte-identical', () => {
+  const run = app();
+  run('startApp(); const originalSetupID = library.currentID; const originalLink = shareHash()');
+  run(`setPlayerImage('O1', '${photo}', '${source}', {centerX: 0.4, centerY: 0.6, zoom: 2});
+    setTeamLogo('${photo}'); setWatermarkOpacity(0.23);`);
+  const images = clean(run('state.images'));
+  assert.equal(run('shareHash()'), run('originalLink'));
+  assert.equal(run('canUndo()'), false);
+  const saved = run('window.localStorage.getItem(LIBRARY_KEY)');
+  const restored = app(saved);
+  restored('startApp()');
+  assert.deepEqual(clean(restored('state.images')), images);
+  assert.deepEqual(JSON.parse(run('backupText()')).setups[0].images, images);
+  run('duplicateCurrentSetup(); const duplicateID = library.currentID; setPlayerImage("O1", null)');
+  assert.equal(run('state.images.players.O1'), undefined);
+  run('switchToSetup(originalSetupID)');
+  assert.deepEqual(clean(run('state.images')), images);
+  run('switchToSetup(duplicateID)');
+  assert.equal(run('state.images.players.O1'), undefined);
+  assert.equal(run('state.images.playerSources.O1'), undefined);
+  assert.equal(run('state.images.playerCrops.O1'), undefined);
+  assert.equal(run('state.images.teamLogo'), photo);
+  run('newSetup("Fresh", "6-2", "smart")');
+  assert.deepEqual(clean(run('state.images')), { players: {}, playerSources: {}, playerCrops: {}, teamLogo: null, watermarkOpacity: 0.16 });
+});
+
+test('import previews exclude artwork and restore it on discard; formation undo preserves current photos', () => {
+  const run = app();
+  run(`startApp(); setPlayerImage('O1', '${photo}', '${source}', {zoom: 2}); setTeamLogo('${photo}');
+    const originalImages = normalizedSetupImages(state.images); resetAllCourts();
+    setWatermarkOpacity(0.3); undo();`);
+  assert.equal(run('state.images.watermarkOpacity'), 0.3);
+  assert.equal(run('state.images.players.O1'), photo);
+  run('stageImport(buildSharePayload())');
+  assert.deepEqual(clean(run('state.images.players')), {});
+  run(`setPlayerImage('O1', '${photo}'); setTeamLogo('${photo}')`);
+  assert.equal(run('state.images.teamLogo'), null);
+  run('discardImport()');
+  assert.equal(run('state.images.players.O1'), photo);
+  assert.equal(run('state.images.watermarkOpacity'), 0.3);
+  run('stageImport(buildSharePayload()); saveImportAsNewSetup("From coach")');
+  assert.deepEqual(clean(run('state.images.players')), {});
+  assert.equal(run('state.images.teamLogo'), null);
+});
+
+test('legacy setups open without images and storage failure retains artwork for backup and retry', () => {
+  const run = app();
+  run('startApp(); delete library.setups[0].images');
+  const old = app(run('backupText()'));
+  old('startApp()');
+  assert.equal(old('persistenceIssue'), null);
+  assert.equal(old('state.images.watermarkOpacity'), 0.16);
+  run(`const originalSave = window.localStorage.setItem;
+    window.localStorage.setItem = () => { throw new Error('Quota exceeded'); };
+    setPlayerImage('O1', '${photo}');`);
+  assert.equal(run('persistenceIssue'), 'saveFailed');
+  assert.equal(JSON.parse(run('backupText()')).setups[0].images.players.O1, photo);
+  run('window.localStorage.setItem = originalSave; retryPersistence()');
+  assert.equal(run('persistenceIssue'), null);
+  assert.equal(JSON.parse(run('window.localStorage.getItem(LIBRARY_KEY)')).setups[0].images.players.O1, photo);
+});
+
+test('only local raster images are accepted and opacity uses native bounds', () => {
+  const run = app();
+  for (const invalid of ['https://example.com/photo.png', 'data:image/svg+xml;base64,YQ==', 'javascript:alert(1)', null]) {
+    assert.equal(run(`localImage(${JSON.stringify(invalid)})`), null);
+  }
+  run(`state.images = normalizedSetupImages({players: {O1: '${photo}', BAD: '${photo}'},
+    playerSources: {O1: '${source}', O2: '${source}'}, playerCrops: {O2: {zoom: 3}}, watermarkOpacity: 2});`);
+  assert.deepEqual(Object.keys(clean(run('state.images.players'))), ['O1']);
+  assert.deepEqual(Object.keys(clean(run('state.images.playerSources'))), ['O1']);
+  assert.equal(run('state.images.watermarkOpacity'), 0.4);
+  assert.equal(run('clampedWatermarkOpacity(-1)'), 0);
+  assert.equal(run('clampedWatermarkOpacity(NaN)'), 0.16);
+});
+
+test('late image edits are invalid after changing setups, systems or incoming previews', () => {
+  for (const transition of ['newSetup("Other", "5-1", "smart")', 'setSystem("6-2")',
+    'duplicateCurrentSetup()', 'stageImport(buildSharePayload()); discardImport()']) {
+    const run = app();
+    run(`startApp(); const edit = imageEditContext('O1'); ${transition}`);
+    assert.equal(run('imageEditIsCurrent(edit)'), false, transition);
+  }
+  const run = app();
+  run(`startApp(); const photoEdit = imageEditContext('O1'); setPlayerImage('O1', '${photo}')`);
+  assert.equal(run('imageEditIsCurrent(photoEdit)'), false, 'replacing a photo invalidates an older image request');
+});
+
+test('crop controls pan the retained source and Use Photo saves a square; cancel preserves artwork', () => {
+  const run = app();
+  run(`startApp();
+    const controls = {};
+    class ImageControl {
+      constructor() { this.handlers = {}; this.style = {}; this.value = ''; this.clientWidth = 200; }
+      addEventListener(name, callback) { (this.handlers[name] ||= []).push(callback); }
+      emit(name, fields = {}) { const event = { target: this, preventDefault() {}, ...fields };
+        for (const callback of this.handlers[name] || []) callback(event); }
+      setAttribute() {} focus() {} setPointerCapture() {}
+      getBoundingClientRect() { return { left: 0, top: 0 }; }
+      close() { this.emit('close'); }
+    }
+    document.getElementById = id => controls[id] ||= new ImageControl();
+    const cropDraws = [];
+    document.createElement = () => ({ width: 0, height: 0,
+      getContext: () => ({ drawImage(...args) { cropDraws.push(args.slice(1)); },
+        getImageData: () => ({data: [1, 2, 3, 255]}) }), toDataURL: () => '${photo}' });
+    wireImageControls();
+    photoDraft = {edit: imageEditContext('O1'), source: '${source}',
+      image: {naturalWidth: 900, naturalHeight: 450}, crop: {centerX: 0.5, centerY: 0.5, zoom: 1}};
+    controls['photo-zoom'].value = '2'; controls['photo-zoom'].emit('input');
+    controls['photo-viewport'].emit('pointerdown', {pointerId: 1, pointerType: 'mouse', button: 0, clientX: 100, clientY: 100});
+    controls['photo-viewport'].emit('pointermove', {pointerId: 1, clientX: 120, clientY: 110});
+    controls['photo-viewport'].emit('pointerup', {pointerId: 1});
+    controls['photo-editor-form'].emit('submit');`);
+  const args = clean(run('cropDraws[0]'));
+  assert.ok(Math.abs(args[0] - 315) < 1e-9);
+  assert.ok(Math.abs(args[1] - 101.25) < 1e-9);
+  assert.deepEqual(args.slice(2), [225, 225, 0, 0, 512, 512]);
+  assert.equal(run('state.images.players.O1'), photo);
+  assert.equal(run('state.images.playerSources.O1'), source);
+  assert.equal(run('state.images.playerCrops.O1.zoom'), 2);
+  assert.equal(run('photoDraft'), null);
+  const saved = clean(run('state.images'));
+  run(`photoDraft = {edit: imageEditContext('O1'), source: '${source}',
+    image: {naturalWidth: 900, naturalHeight: 450}, crop: {zoom: 8}};
+    controls['photo-reset'].emit('click'); controls['photo-editor'].close();`);
+  assert.deepEqual(clean(run('state.images')), saved);
+});
+
+test('print rendering clips photos to discs and draws the transparent watermark before court lines', () => {
+  const run = app();
+  run(`state.images = normalizedSetupImages({watermarkOpacity: 0.3});
+    const printImages = [], printOrder = [];
+    const photoBitmap = {naturalWidth: 512, naturalHeight: 512};
+    const logoBitmap = {naturalWidth: 200, naturalHeight: 100};
+    const artworkContext = {save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, arcTo() {}, closePath() {},
+      stroke() {}, arc() {}, fill() {}, fillText() {}, measureText: text => ({width: text.length * 5}),
+      strokeRect() { printOrder.push('lines'); }, clip() { printOrder.push('clip'); },
+      drawImage(image, ...args) { printOrder.push(image === logoBitmap ? 'logo' : 'photo'); printImages.push(args); }};
+    drawPrintCourt(artworkContext, 0, 0, 0, 180, 180, {players: {O1: photoBitmap}, teamLogo: logoBitmap});`);
+  assert.deepEqual(clean(run('printOrder')), ['logo', 'lines', 'clip', 'photo']);
+  clean(run('printImages[0]')).forEach((value, i) => assert.ok(Math.abs(value - [32.4, 61.2, 115.2, 57.6][i]) < 1e-9));
+  assert.equal(run('artworkContext.globalAlpha'), 0.3);
+});
+
+test('court SVG places logos beneath lines and follows the displayed roster through all systems', () => {
+  const run = app();
+  run(`setPlayerImage('O1', '${photo}'); setPlayerImage('L', '${photo}'); setTeamLogo('${photo}')`);
+  for (const system of ['4-2', '5-1', '6-2']) {
+    run(`setSystem('${system}')`);
+    for (let rotation = 0; rotation < 6; rotation++) {
+      const svg = run(`courtSVGString(${rotation}, {size: 400, floorHref: ''})`);
+      assert.equal((svg.match(/class="player-photo"/g) || []).length, 2);
+      assert.equal((svg.match(/class="team-logo"/g) || []).length, 1);
+      assert.equal((svg.match(/class="photo-caption"/g) || []).length, 2);
+      assert.ok(svg.indexOf('class="team-logo"') < svg.indexOf('<line x1="0"'));
+    }
+  }
+  run('setShowBackrowMAsL(false)');
+  assert.equal((run("courtSVGString(0, {size: 400, floorHref: ''})").match(/class="player-photo"/g) || []).length, 1);
+  run('setWatermarkOpacity(0)');
+  assert.doesNotMatch(run("courtSVGString(0, {size: 400, floorHref: ''})"), /class="team-logo"/);
 });

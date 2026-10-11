@@ -34,6 +34,7 @@ const state = {
   rotationSetupStyles: {},
   playerLabels: {},
   playerNumbers: {},
+  images: { players: {}, playerSources: {}, playerCrops: {}, teamLogo: null, watermarkOpacity: 0.16 },
   showHints: true,
   showBackrowMAsL: true,
   showSpotNumbers: false,
@@ -909,6 +910,12 @@ function setupPayload(setup) {
   }
 }
 
+// Artwork lives beside the link JSON, so links and formation undo stay compact.
+function applySetup(setup) {
+  state.images = normalizedSetupImages(setup.images);
+  applyState(setupPayload(setup));
+}
+
 // Only an absent library is a first visit. Unreadable saved work is never replaced.
 function readLibrary() {
   const store = storage();
@@ -952,8 +959,11 @@ function persist() {
   const setup = currentSetup();
   if (!setup) return;
   const json = payloadJSON(buildSharePayload());
-  if (setup.json !== json) {
+  // Image setters replace the artwork value; player drags need not revalidate
+  // or compare megabytes of unchanged photo data.
+  if (setup.json !== json || setup.images !== state.images) {
     setup.json = json;
+    setup.images = state.images;
     setup.modified = new Date().toISOString();
   }
   saveLibrary();
@@ -972,7 +982,7 @@ function retryPersistence() {
       persistenceIssue = null;
       persistenceEnabled = true;
       unreadableLibraryText = null;
-      applyState(setupPayload(currentSetup()));
+      applySetup(currentSetup());
       forgetHistory();
     }
   } else {
@@ -997,8 +1007,8 @@ function uniqueSetupName(wanted, excludingID = null) {
   return `${base} ${n}`;
 }
 
-function addSetup(name, json) {
-  const setup = { id: uid(), name: uniqueSetupName(name), json, modified: new Date().toISOString() };
+function addSetup(name, json, images) {
+  const setup = { id: uid(), name: uniqueSetupName(name), json, images: normalizedSetupImages(images), modified: new Date().toISOString() };
   library.setups.push(setup);
   library.currentID = setup.id;
   return setup;
@@ -1015,7 +1025,7 @@ function startApp() {
   persistenceEnabled = true;
   if (read.library) {
     library = read.library;
-    applyState(setupPayload(currentSetup()));
+    applySetup(currentSetup());
   } else {
     state.rotations = buildRotations();
     addSetup('My formation', payloadJSON(buildSharePayload()));
@@ -1029,7 +1039,7 @@ function switchToSetup(id) {
   persist();
   library.currentID = id;
   saveLibrary();
-  applyState(setupPayload(target));
+  applySetup(target);
   forgetHistory();
   bumpShare();
 }
@@ -1055,6 +1065,7 @@ function newSetup(name, system, style) {
   const fresh = freshPayload(system, style);
   addSetup(String(name || '').trim() || 'New formation', payloadJSON(fresh));
   saveLibrary();
+  state.images = normalizedSetupImages();
   applyState(fresh);
   forgetHistory();
   bumpShare();
@@ -1065,7 +1076,7 @@ function duplicateCurrentSetup() {
   persist();
   const current = currentSetup();
   if (!current) return;
-  addSetup(`${current.name} copy`, current.json);
+  addSetup(`${current.name} copy`, current.json, state.images);
   saveLibrary();
   forgetHistory();
   bumpShare();
@@ -1090,7 +1101,7 @@ function deleteCurrentSetup() {
   library.setups.splice(index, 1);
   library.currentID = library.setups[Math.min(index, library.setups.length - 1)].id;
   saveLibrary();
-  applyState(setupPayload(currentSetup()));
+  applySetup(currentSetup());
   forgetHistory();
   bumpShare();
 }
@@ -1109,6 +1120,7 @@ function stageImport(payload) {
   if (persistenceIssue === 'unreadableLibrary') return false;
   persist();
   pendingImport = { payload, suggestedName: importName(payload) };
+  state.images = normalizedSetupImages();
   applyState(payload);
   forgetHistory();
   notifyStateChange();
@@ -1121,6 +1133,7 @@ function saveImportAsNewSetup(name) {
   pendingImport = null;
   addSetup(String(name || '').trim() || suggestedName, payloadJSON(payload));
   saveLibrary();
+  state.images = normalizedSetupImages();
   applyState(payload);
   forgetHistory();
   bumpShare();
@@ -1130,7 +1143,7 @@ function discardImport() {
   if (!pendingImport) return;
   pendingImport = null;
   const setup = currentSetup();
-  if (setup) applyState(setupPayload(setup));
+  if (setup) applySetup(setup);
   forgetHistory();
   notifyStateChange();
 }

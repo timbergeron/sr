@@ -19,7 +19,7 @@
 </script>
 <link rel="icon" type="image/png" href="assets/favicon-64.png" />
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-<link rel="stylesheet" href="styles.css?v=964464fb6c03" />
+<link rel="stylesheet" href="styles.css?v=9c4b5a99d03c" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="qrcode.min.js?v=c541ef063278" defer></script>
@@ -44,6 +44,16 @@
         <h2 id="team-heading">Your team</h2>
         <div class="card roster" id="roster"></div>
         <p class="footnote">Short names use up to 5 characters. Optional jersey numbers appear on court.</p>
+      </section>
+
+      <section class="group" aria-labelledby="watermark-heading">
+        <h2 id="watermark-heading">Court watermark</h2>
+        <div class="card watermark-controls">
+          <button class="image-button" id="team-logo-button" type="button">Add team logo</button>
+          <label class="opacity-label" for="watermark-opacity">Opacity <output id="watermark-opacity-value">16%</output></label>
+          <input id="watermark-opacity" type="range" min="0" max="0.4" step="0.01" value="0.16" />
+        </div>
+        <p class="footnote">Photos and logos stay with this saved setup and appear in image and PDF exports. Share links do not include them.</p>
       </section>
 
       <section class="group" aria-labelledby="system-heading">
@@ -180,6 +190,27 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="menu" id="menu" role="menu" hidden></div>
 
+<input type="file" id="setup-image-input" accept="image/*" hidden />
+<dialog class="sheet photo-editor" id="photo-editor" aria-labelledby="photo-editor-title">
+  <form method="dialog" id="photo-editor-form">
+    <header class="sheet-header">
+      <button class="text-button" type="button" data-close>Cancel</button>
+      <h2 id="photo-editor-title">Frame photo</h2>
+      <button class="text-button strong" id="photo-use" type="submit" value="save">Use Photo</button>
+    </header>
+    <p class="footnote">Drag the photo and pinch to zoom. Keep the face inside the circle.</p>
+    <div class="photo-viewport" id="photo-viewport" tabindex="0" role="img" aria-label="Photo crop" aria-describedby="photo-keyboard-hint">
+      <img id="photo-source" alt="" draggable="false" />
+      <div class="photo-mask" aria-hidden="true"></div>
+    </div>
+    <p class="footnote" id="photo-keyboard-hint">Arrow keys move the crop. Use the slider to zoom.</p>
+    <label class="opacity-label" for="photo-zoom">Zoom <output id="photo-zoom-value">1.0×</output></label>
+    <input id="photo-zoom" type="range" min="1" max="8" step="0.01" value="1" />
+    <button class="text-button" id="photo-reset" type="button">Reset crop</button>
+    <p class="field-error" id="photo-error" role="alert" hidden></p>
+  </form>
+</dialog>
+
 <dialog class="sheet" id="new-setup-dialog" aria-labelledby="new-setup-title">
   <form method="dialog" id="new-setup-form">
     <header class="sheet-header">
@@ -263,10 +294,11 @@
 </dialog>
 
 <script src="formation.js?v=70a18293dab8"></script>
-<script src="app.js?v=2572cd9b04f3"></script>
+<script src="app.js?v=bccb5a08ff30"></script>
+<script src="images.js?v=37a12fb9add0"></script>
 <script src="labels.js?v=d43dcb407412"></script>
-<script src="court.js?v=de86d8731cf4"></script>
-<script src="export.js?v=b7c5540016eb"></script>
-<script src="ui.js?v=5c4d61f1da0f"></script>
+<script src="court.js?v=42a41ea2d482"></script>
+<script src="export.js?v=4a59c9a1e140"></script>
+<script src="ui.js?v=78ab3c144af9"></script>
 </body>
 </html>

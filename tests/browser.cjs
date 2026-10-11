@@ -1,12 +1,9 @@
 // Check actual rendered pixels: SVG text can exist in the DOM but be blank in Safari.
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const http = require('node:http');
-const path = require('node:path');
 const { webkit, chromium } = require('playwright');
 const { PNG } = require('pngjs');
 const { checkTouch } = require('./touch.cjs');
-const root = path.join(__dirname, '..');
+const { localURL, routeSite, launchBrowser } = require('./site.cjs');
 
 function pixelBounds(png, box, matches) {
   let count = 0, left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
@@ -99,17 +96,8 @@ async function checkOverlappingBodies(svg, description) {
 }
 
 async function main() {
-  const server = http.createServer((req, res) => {
-    const name = new URL(req.url, 'http://localhost').pathname.replace(/^\/sr\//, '') || 'index.html';
-    const file = path.resolve(root, name);
-    if (!file.startsWith(root + '/') || !fs.existsSync(file)) { res.writeHead(404).end(); return; }
-    const target = fs.statSync(file).isDirectory() ? path.join(file, 'index.html') : file;
-    res.setHeader('Content-Type', { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' }[path.extname(target)] || 'application/octet-stream');
-    res.end(fs.readFileSync(target));
-  });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const url = process.argv[2] || `http://127.0.0.1:${server.address().port}/sr/`;
-  const browser = await ({ webkit, chromium }[process.env.SR_BROWSER || 'webkit']).launch({ headless: true });
+  const url = process.argv[2] || localURL;
+  const browser = await launchBrowser({ webkit, chromium }[process.env.SR_BROWSER || 'webkit']);
   try {
     for (const width of [320, 390]) {
       for (const colorScheme of ['light', 'dark']) {
@@ -117,7 +105,7 @@ async function main() {
         const page = await context.newPage();
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
-        await page.route('https://**/*', route => route.request().url().startsWith(url) ? route.continue() : route.abort());
+        await routeSite(page, url);
         await page.goto(url, { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => state.rotations.length === 6 && ui.courts.length === 6);
         const title = await page.locator('.setup-name').evaluate(el => ({ width: el.clientWidth, needed: el.scrollWidth }));
@@ -164,6 +152,6 @@ async function main() {
       }
     }
     await checkTouch(browser, url, process.env.SR_BROWSER || 'webkit');
-  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+  } finally { await browser.close(); }
 }
 main().catch(error => { console.error(error); process.exit(1); });
