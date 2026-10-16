@@ -40,6 +40,7 @@ const state = {
   showSpotNumbers: false,
   showPositionBadges: false,
   showPlayerNamesAndNumbers: true,
+  showPhotoLabels: true,
   rotations: []
 };
 
@@ -122,6 +123,7 @@ function statePayload(round) {
   // Additive v1 fields: omit defaults to preserve legacy links byte for byte.
   if (state.showPositionBadges) payload.display.positionBadges = true;
   if (!state.showPlayerNamesAndNumbers) payload.display.playerNamesAndNumbers = false;
+  if (!state.showPhotoLabels) payload.display.photoLabels = false;
   const numbers = cleanedPlayerNumbers();
   if (Object.keys(numbers).length) payload.numbers = numbers;
   const rotationKeys = Object.keys(state.rotationPassers).sort();
@@ -254,6 +256,7 @@ function normalizePayload(raw) {
   };
   if (display.positionBadges === true) payload.display.positionBadges = true;
   if (display.playerNamesAndNumbers === false) payload.display.playerNamesAndNumbers = false;
+  if (display.photoLabels === false) payload.display.photoLabels = false;
   if (Object.keys(numbers).length) payload.numbers = numbers;
   if (Object.keys(rotationPassers).length) payload.rotationPassers = rotationPassers;
   if (SETUP_STYLES.includes(raw.setupStyle)) payload.setupStyle = raw.setupStyle;
@@ -304,6 +307,7 @@ function adoptPayloadFields(payload) {
   state.showSpotNumbers = payload.display.spotNumbers;
   state.showPositionBadges = payload.display.positionBadges === true;
   state.showPlayerNamesAndNumbers = payload.display.playerNamesAndNumbers !== false;
+  state.showPhotoLabels = payload.display.photoLabels !== false;
 }
 
 // Overlays hand-placed positions carried by a link or a saved setup.
@@ -540,6 +544,11 @@ function setShowPositionBadges(value) {
 
 function setShowPlayerNamesAndNumbers(value) {
   state.showPlayerNamesAndNumbers = Boolean(value);
+  bumpShare();
+}
+
+function setShowPhotoLabels(value) {
+  state.showPhotoLabels = Boolean(value);
   bumpShare();
 }
 

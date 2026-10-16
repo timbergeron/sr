@@ -87,8 +87,9 @@ async function main() {
       const savedPhoto = await page.evaluate(() => state.images.players.O1);
       assert.equal(saved.zoom, 2);
       assert.equal(await page.evaluate(() => shareHash()), originalLink);
-      assert.equal(await page.locator('.court-svg .player-photo').count(), 6);
-      assert.equal(await page.locator('.court-svg .photo-caption').count(), 6);
+      await page.waitForFunction(() => document.querySelectorAll('.court-svg .player-photo').length === 6);
+      assert.equal(await page.locator('.court-svg .photo-caption').count(), 0);
+      assert.equal(await page.locator('.court-svg .labels text[stroke-opacity="1"]').count(), 6);
       await playerButton.click();
       await page.getByRole('menuitem', { name: 'Adjust crop', exact: true }).click();
       await page.locator('#photo-editor').waitFor({ state: 'visible' });
@@ -110,6 +111,41 @@ async function main() {
         return ctx.getImageData(0, 0, 1, 1).data[3];
       });
       assert.equal(transparency, 0);
+      if (width < 1100) await page.locator('#settings-done').click();
+      const reset = width < 760 ? page.locator('#phone-reset-button') : page.locator('.reset-positions').filter({visible:true}).first();
+      const beforeReset = await page.evaluate(() => stateSnapshot());
+      await reset.click();
+      assert.equal(await reset.isDisabled(), true);
+      assert.deepEqual(await page.evaluate(() => stateSnapshot().positions.slice(1)), beforeReset.positions.slice(1));
+      await page.evaluate(() => undo());
+      assert.deepEqual(await page.evaluate(() => stateSnapshot()), beforeReset);
+
+      await page.locator('#edit-button').click();
+      await page.getByRole('menuitem', {name: 'Reset All Rotations', exact: true}).click();
+      await page.locator('#reset-all-dialog').waitFor({state: 'visible'});
+      await page.locator('#reset-all-dialog button[value="cancel"]').click();
+      assert.deepEqual(await page.evaluate(() => stateSnapshot()), beforeReset);
+      await page.locator('#edit-button').click();
+      await page.getByRole('menuitem', {name: 'Reset All Rotations', exact: true}).click();
+      await page.locator('#reset-all-dialog button[value="confirm"]').click();
+      await page.waitForFunction(() => state.rotations.every((_, i) => positionsAlreadyInZones(i)));
+      assert.equal(await page.evaluate(() => state.rotations.every((_, i) => positionsAlreadyInZones(i))), true);
+      await page.evaluate(() => undo());
+      assert.deepEqual(await page.evaluate(() => stateSnapshot()), beforeReset);
+
+      await page.evaluate(() => setShowPositionBadges(true));
+      const viewButton = width < 760 ? page.locator('#phone-court-view-button') : page.locator('.card-zone .court-view-button').first();
+      await viewButton.click();
+      await page.getByRole('menuitemcheckbox', {name:'Labels on photos',exact:true}).click();
+      assert.equal(await page.locator('.court-svg .labels text').count(), 30);
+      assert.equal(await page.locator('.court-svg .position-badge').count(), 30);
+      assert.equal(await page.locator('.court-svg .player-photo').count(), 6);
+      // A syntactically valid but undecodable image must retain its role label.
+      await page.evaluate(() => setPlayerImage('O2', 'data:image/png;base64,YmFk'));
+      await page.waitForFunction(() => playerPhotoCache.get('O2')?.image.complete);
+      assert.equal(await page.locator('.court-svg .labels text').count(), 30);
+      assert.equal(await page.locator('.court-svg .position-badge').count(), 30);
+      await page.evaluate(() => setPlayerImage('O2', null));
       // Exercise actual SVG rasterization, PNG delivery and the PDF print canvas.
       const exports = await page.evaluate(async () => {
         resetAllCourts();
@@ -146,7 +182,10 @@ async function main() {
       const images = await page.evaluate(() => state.images);
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.waitForFunction(() => ui.courts.length === 6);
+      await page.waitForFunction(() => document.querySelectorAll('.court-svg .player-photo').length === 6);
       assert.deepEqual(await page.evaluate(() => state.images), images);
+      assert.equal(await page.evaluate(() => state.showPhotoLabels), false);
+      assert.equal(await page.locator('.court-svg .labels text').count(), 30);
       await page.evaluate(() => { duplicateCurrentSetup(); setPlayerImage('O1', null); });
       await page.evaluate(id => switchToSetup(id), originalSetup);
       assert.deepEqual(await page.evaluate(() => state.images), images);
@@ -163,7 +202,7 @@ async function main() {
       assert.equal(await page.evaluate(() => state.images.teamLogo), null);
       assert.equal(await page.locator('body').evaluate(el => el.scrollWidth <= window.innerWidth), true);
       assert.deepEqual(errors, []);
-      console.log(`PASS: ${engine} ${width}px: upload, pan, pinch, keyboard, crop cancel/re-edit, transparent watermark, saved artwork, SVG/PNG/PDF rendering and edit isolation`);
+      console.log(`PASS: ${engine} ${width}px: crop editing, watermark, outlined/photo-only labels, unreadable photo fallback, reset/confirmation, saved artwork, SVG/PNG/PDF rendering and edit isolation`);
       await context.close();
     }
   } finally { await browser.close(); }

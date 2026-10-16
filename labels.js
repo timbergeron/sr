@@ -111,11 +111,15 @@ function courtLabel(id) {
   return courtLabels()[id] || SR.ROLES[id].label;
 }
 
+function showsCourtLabels(id) {
+  return state.showPhotoLabels || !playerPhoto(id);
+}
+
 function hasTwoLineLabels(rotation) {
   const labels = courtLabels();
   return POSITION_ZONES.some(zone => {
     const occ = occupantAt(rotation, zone);
-    return labels[occ.id] !== SR.ROLES[occ.id].label;
+    return showsCourtLabels(occ.id) && labels[occ.id] !== SR.ROLES[occ.id].label;
   });
 }
 

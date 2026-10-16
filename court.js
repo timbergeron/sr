@@ -286,21 +286,15 @@ function badgeMarkup(id, player, unitsPerPx) {
 }
 
 function labelTextMarkup(player) {
+  if (player.showsLabels === false) return '';
   const d = DIAMETER;
   const nameSize = d * chipFontFraction(player.label);
   const name = player.label.toUpperCase();
   // WebKit can discard filtered SVG glyphs at this court-unit font size.
   // A thin painted outline keeps the contrast without rasterizing the text.
-  const common = `text-anchor="middle" dominant-baseline="alphabetic" font-family='${CHIP_FONT}' font-weight="600" fill="#fff" stroke="#000" stroke-opacity="0.25" stroke-width="${0.012 * SVG_TEXT_SCALE}" paint-order="stroke fill"`;
-  const backing = height => {
-    if (!player.photo) return '';
-    const nameWidth = d * chipTextWidth(name) * chipFontFraction(name) / nominalChipFontFraction(name);
-    const roleWidth = d * chipTextWidth(player.role) * ROLE_CHIP_FONT_FRACTION / nominalChipFontFraction(player.role);
-    const width = Math.max(nameWidth, player.label === player.role ? 0 : roleWidth) + d * 0.07;
-    return `<rect class="photo-caption" x="${fmt(-width / 2)}" y="${fmt(-height / 2)}" width="${fmt(width)}" height="${fmt(height)}" rx="${fmt(height / 2)}" fill="#000" fill-opacity="0.72"/>`;
-  };
+  const common = `text-anchor="middle" dominant-baseline="alphabetic" font-family='${CHIP_FONT}' font-weight="600" fill="#fff" stroke="#000" stroke-opacity="${player.photo ? 1 : 0.25}" stroke-width="${(player.photo ? d * 0.036 : 0.012) * SVG_TEXT_SCALE}" stroke-linejoin="round" paint-order="stroke fill"`;
   if (player.label === player.role) {
-    return `${backing(nameSize * 1.19 + d * 0.03)}<g transform="scale(${1 / SVG_TEXT_SCALE})"><text y="0" dy="${svgTextBaseline(name, nameSize)}" font-size="${fmt(nameSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(name)}</text></g>`;
+    return `<g transform="scale(${1 / SVG_TEXT_SCALE})"><text y="0" dy="${svgTextBaseline(name, nameSize)}" font-size="${fmt(nameSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(name)}</text></g>`;
   }
   const lineHeight = 1.19;
   const nameHeight = nameSize * lineHeight;
@@ -310,7 +304,7 @@ function labelTextMarkup(player) {
   const total = nameHeight + spacing + roleHeight;
   const nameY = -total / 2 + nameHeight / 2;
   const roleY = total / 2 - roleHeight / 2 - d * roleLiftFraction(player.label);
-  return `${backing(total + d * 0.03)}<g transform="scale(${1 / SVG_TEXT_SCALE})"><text y="${fmt(nameY * SVG_TEXT_SCALE)}" dy="${svgTextBaseline(name, nameSize)}" font-size="${fmt(nameSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(name)}</text>
+  return `<g transform="scale(${1 / SVG_TEXT_SCALE})"><text y="${fmt(nameY * SVG_TEXT_SCALE)}" dy="${svgTextBaseline(name, nameSize)}" font-size="${fmt(nameSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(name)}</text>
     <text y="${fmt(roleY * SVG_TEXT_SCALE)}" dy="${svgTextBaseline(player.role, roleSize)}" font-size="${fmt(roleSize * SVG_TEXT_SCALE)}" ${common}>${escapeXML(player.role)}</text></g>`;
 }
 
@@ -329,7 +323,8 @@ function courtPlayers(index, { positions, activeZone = null, selectedZone = null
     return {
       zone,
       occ,
-      photo: state.images.players[occ.id] || null,
+      photo: playerPhoto(occ.id),
+      showsLabels: showsCourtLabels(occ.id),
       position: here,
       nudge: nudges[zone] || { dx: 0, dy: 0 },
       family: SR.ROLES[occ.id].cls,
@@ -348,7 +343,7 @@ function courtPlayers(index, { positions, activeZone = null, selectedZone = null
 
 // The rotational position stays attached to the disc, above neighbouring players.
 function positionBadgeMarkup(player, unitsPerPx) {
-  if (!state.showPositionBadges) return '';
+  if (!state.showPositionBadges || player.showsLabels === false) return '';
   const side = DIAMETER * 0.40;
   const offset = -DIAMETER * 0.36;
   return `<g class="position-badge" transform="scale(${player.scale})" pointer-events="none"><g transform="translate(${fmt(offset)} ${fmt(offset)})">

@@ -551,7 +551,11 @@ function buildCourts() {
     viewButton.setAttribute('aria-haspopup', 'menu');
     viewButton.setAttribute('aria-expanded', 'false');
     viewButton.addEventListener('click', () => openMenu(viewButton, courtViewMenuItems(i)));
-    zoneRow.appendChild(viewButton);
+    const resetButton = element('button', 'text-button reset-positions', 'Reset positions');
+    resetButton.type = 'button';
+    resetButton.addEventListener('click', () => resetCourtFromControls(i));
+    const resetStatus = element('span', 'reset-status', 'Positions adjusted');
+    zoneRow.append(resetButton, viewButton, resetStatus);
 
     const court = createCourt({
       index: i,
@@ -572,7 +576,7 @@ function buildCourts() {
     frame.appendChild(court.element);
     card.append(head, zoneRow, frame);
     inner.appendChild(card);
-    ui.cards.push({ card, heading, setter, receiving, flag, viewButton });
+    ui.cards.push({ card, heading, setter, receiving, flag, viewButton, resetButton, resetStatus });
     ui.courts.push(court);
   }
 
@@ -612,15 +616,41 @@ function renderCards() {
     parts.receiving.classList.toggle('problem', receiving < 2);
     parts.flag.hidden = isRotationLegal(i);
     renderCourtViewButton(parts.viewButton, i);
+    renderResetControls(parts.resetButton, parts.resetStatus, i);
     ui.courts[i].update();
   });
   renderCourtViewButton($('phone-court-view-button'), ui.rotation);
+  renderResetControls($('phone-reset-button'), $('phone-reset-status'), ui.rotation);
+}
+
+function positionsAlreadyInZones(index) {
+  const positions = state.rotations[index]?.positions;
+  const targets = SR.courtPositions();
+  return Boolean(positions) && POSITION_ZONES.every(zone =>
+    Math.abs(positions[zone].x - targets[zone].x) <= PLACEMENT_EPSILON &&
+    Math.abs(positions[zone].y - targets[zone].y) <= PLACEMENT_EPSILON);
+}
+
+function renderResetControls(button, status, index) {
+  const matches = positionsAlreadyInZones(index);
+  button.textContent = isPhone() ? `Reset R${index + 1}` : 'Reset positions';
+  button.disabled = matches || Boolean(pendingImport);
+  button.setAttribute('aria-label', `Reset positions in rotation ${index + 1}`);
+  button.title = matches ? 'Already in court positions' : 'Return players to court positions, keeping receiver selections and player details';
+  status.classList.toggle('is-adjusted', !matches);
+  status.setAttribute('aria-hidden', String(matches));
+}
+
+function resetCourtFromControls(index) {
+  ui.rotation = index;
+  writePreference(ROTATION_PREFERENCE, String(index));
+  resetCourt(index);
 }
 
 function renderCourtViewButton(button, index) {
   const view = ui.zoneView.has(index) ? SETUP_STYLE_TITLES.courtPosition : 'Receive';
   button.textContent = `Court view · ${view} ▾`;
-  button.setAttribute('aria-label', `Court view for rotation ${index + 1}, ${view}, player names and numbers ${state.showPlayerNamesAndNumbers ? 'on' : 'off'}, position badges ${state.showPositionBadges ? 'on' : 'off'}`);
+  button.setAttribute('aria-label', `Court view for rotation ${index + 1}, ${view}, player names and numbers ${state.showPlayerNamesAndNumbers ? 'on' : 'off'}, labels on photos ${state.showPhotoLabels ? 'on' : 'off'}, position badges ${state.showPositionBadges ? 'on' : 'off'}`);
 }
 
 function setZoneView(index, enabled) {
@@ -815,10 +845,10 @@ function editMenuItems() {
   return [
     { label: 'Undo', icon: 'fa-solid fa-arrow-rotate-left', disabled: !canUndo(), title: undoActionLabel(), action: undo },
     { section: `Rotation ${index + 1}` },
-    { label: 'Reset', icon: 'fa-solid fa-arrows-rotate', title: `Restore standard court positions in rotation ${index + 1}`, action: () => resetCourt(index) },
+    { label: `Reset Rotation ${index + 1}`, icon: 'fa-solid fa-arrows-rotate', title: `Restore standard court positions in rotation ${index + 1}`, action: () => resetCourt(index) },
     { label: SETUP_STYLE_TITLES.smart, icon: 'fa-solid fa-wand-magic-sparkles', title: `Arrange rotation ${index + 1} using its selected passers`, action: () => smartArrange(index) },
     { section: 'All Rotations' },
-    { label: 'Reset All Rotations', icon: 'fa-solid fa-arrows-rotate', title: 'Restore standard court positions in all six rotations', action: resetAllCourts },
+    { label: 'Reset All Rotations', icon: 'fa-solid fa-arrows-rotate', title: 'Restore standard court positions in all six rotations', action: () => $('reset-all-dialog').showModal() },
     { label: `${SETUP_STYLE_TITLES.smart} All Rotations`, icon: 'fa-solid fa-wand-magic-sparkles', title: "Arrange all six rotations using each rotation's selected passers", action: smartArrangeAll }
   ];
 }
@@ -831,6 +861,8 @@ function courtViewMenuItems(index) {
     { section: 'All rotations' },
     { label: 'Player names & numbers', checked: state.showPlayerNamesAndNumbers, toggle: true,
       title: 'Show role codes without deleting player details', action: () => setShowPlayerNamesAndNumbers(!state.showPlayerNamesAndNumbers) },
+    { label: 'Labels on photos', checked: state.showPhotoLabels, toggle: true,
+      title: 'Show names, numbers, roles and position badges on photos in all rotations and exports', action: () => setShowPhotoLabels(!state.showPhotoLabels) },
     { label: 'Position badges', checked: state.showPositionBadges, toggle: true,
       title: 'Show court positions 1 through 6 beside each player', action: () => setShowPositionBadges(!state.showPositionBadges) }
   ];
@@ -1041,6 +1073,7 @@ function wireControls() {
   $('spot-numbers-toggle').addEventListener('change', event => setShowSpotNumbers(event.target.checked));
   $('backrow-label').addEventListener('change', event => setShowBackrowMAsL(event.target.value === 'libero'));
   $('phone-court-view-button').addEventListener('click', () => openMenu($('phone-court-view-button'), courtViewMenuItems(ui.rotation)));
+  $('phone-reset-button').addEventListener('click', () => resetCourtFromControls(ui.rotation));
 
   $('import-form').addEventListener('submit', event => {
     event.preventDefault();
@@ -1070,6 +1103,7 @@ function wireControls() {
   });
   wireDialog($('rename-dialog'), () => renameCurrentSetup($('rename-name').value));
   wireDialog($('delete-dialog'), deleteCurrentSetup);
+  wireDialog($('reset-all-dialog'), resetAllCourts);
   wireDialog($('system-dialog'), () => {
     if (ui.pendingSystem) setSystem(ui.pendingSystem);
     ui.pendingSystem = null;

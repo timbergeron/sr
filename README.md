@@ -28,13 +28,24 @@ all roster details remain stored and shared. Share links require numeric version
 boundary ties caused by coordinate rounding are separated inward. Player drags are
 scoped to the document and system where they began.
 
-The web app includes the player-photo and team-watermark changes from native
-revision `f467329` (2026-10-10). In **Your team**, use **Add photo** beside a
+The web app includes the player-photo, team-watermark and display changes through
+native revision `2cd83c4` (2026-10-16). In **Your team**, use **Add photo** beside a
 position, then drag or pinch to frame it and choose **Use Photo**. A zoom slider,
 arrow-key crop movement, and **Reset crop** are available. **Adjust crop** reopens
 the retained source; canceling preserves the saved photo. Photos follow the
 displayed roster position through all six rotations, with labels and role and
 receiver borders above them.
+
+Photo captions use white lettering with a black outline, leaving the image visible
+between letters. In **Court view**, turn **Labels on photos** off for photo-only
+circles without names, numbers, role codes or position badges. Missing or unreadable
+photos keep their labels. This preference is saved with setups and shared links,
+and applies to all six courts and image/PDF exports.
+
+**Reset positions** (or **Reset R1** on phones) sits beside each court's view menu.
+It restores Court Position for that rotation, keeps receivers and player details,
+and can be undone. The button is disabled when the saved formation already matches
+Court Position. Resetting all six rotations from **Edit** asks for confirmation.
 
 Under **Court watermark**, add a team logo and set its opacity from 0% to 40%
 (16% by default). Transparent logos stay transparent. Artwork is resized and

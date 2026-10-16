@@ -663,9 +663,13 @@ body.is-previewing .setup-button i { display: none; }
   border-radius: 50%;
 }
 .card-flag:hover { background: var(--panel-raised); }
-.card-zone { display: flex; justify-content: flex-end; padding: 0 2px; }
+.card-zone { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; padding: 0 2px; }
+.reset-positions { min-height: 44px; padding: 0; flex: none; }
+.reset-positions:disabled { color: var(--text-dim); opacity: 0.55; }
+.reset-status { flex-basis: 100%; color: var(--text-dim); font-size: 12px; visibility: hidden; }
+.reset-status.is-adjusted { visibility: visible; }
 .court-view-button { color: var(--accent-blue); background: var(--panel-raised); border-radius: 12px; min-height: 44px; }
-#phone-zone-row { justify-content: flex-end; }
+#phone-zone-row { flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
 
 .court-frame { position: relative; }
 .court-svg {

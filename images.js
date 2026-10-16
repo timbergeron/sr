@@ -3,6 +3,41 @@ const DEFAULT_WATERMARK_OPACITY = 0.16;
 const MAX_PHOTO_ZOOM = 8;
 const MAX_IMAGE_BYTES = 40 * 1024 * 1024;
 
+// Decode before hiding labels: a missing or damaged photo keeps its role visible.
+// One entry per roster slot avoids retaining old full-size data URLs after edits.
+const playerPhotoCache = new Map();
+function playerPhotoEntry(id) {
+  const data = state.images.players[id];
+  if (!data) { playerPhotoCache.delete(id); return null; }
+  if (playerPhotoCache.get(id)?.data === data) return playerPhotoCache.get(id);
+  const entry = { data, image: new Image(), readable: false };
+  playerPhotoCache.set(id, entry);
+  entry.loaded = new Promise(resolve => {
+    const finish = () => {
+      entry.readable = entry.image.naturalWidth > 0;
+      resolve();
+      if (playerPhotoCache.get(id) === entry && state.images.players[id] === data) notifyStateChange();
+    };
+    entry.image.onload = finish;
+    entry.image.onerror = finish;
+    entry.image.src = data;
+  });
+  if (entry.image.complete) entry.readable = entry.image.naturalWidth > 0;
+  return entry;
+}
+
+function playerPhoto(id) {
+  const entry = playerPhotoEntry(id);
+  return entry?.readable ? entry.data : null;
+}
+
+async function preparePlayerPhotos() {
+  const entries = Object.keys(state.images.players).map(id => [id, playerPhotoEntry(id)]);
+  await Promise.all(entries.map(([, entry]) => entry.loaded));
+  return Object.fromEntries(entries.filter(([id, entry]) => entry.readable && state.images.players[id] === entry.data)
+    .map(([id, entry]) => [id, entry.image]));
+}
+
 function clampedWatermarkOpacity(value) {
   return Number.isFinite(value) ? Math.min(0.4, Math.max(0, value)) : DEFAULT_WATERMARK_OPACITY;
 }

@@ -32,6 +32,7 @@ function loadImage(src) {
 }
 
 async function courtImage(index, size) {
+  await preparePlayerPhotos();
   const svg = courtSVGString(index, { size, floorHref: await floorDataURL() });
   return loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
 }
@@ -250,26 +251,24 @@ function drawPrintCourt(ctx, index, left, top, width, height, artwork = { player
   for (const zone of POSITION_ZONES) {
     const centre = point(rotation.positions[zone]);
     const occ = occupantAt(rotation, zone);
+    const hasPhoto = Boolean(artwork.players[occ.id]);
+    if (!state.showPhotoLabels && hasPhoto) continue;
     const role = SR.ROLES[occ.id].label;
     const text = courtLabel(occ.id);
     const showsRole = text !== role;
     const nudge = offsets[zone] || { dx: 0, dy: 0 };
     ctx.font = `600 ${Math.max(6, radius * 2 * chipFontFraction(text))}px ${SYSTEM_FONT}`;
-    if (artwork.players[occ.id]) {
-      const w = Math.max(ctx.measureText(text).width, radius * (showsRole ? 0.9 : 0)) + radius * 0.2;
-      const h = radius * (showsRole ? 1.5 : 1);
-      roundedRect(ctx, centre.x + nudge.dx * unit - w / 2, centre.y + nudge.dy * unit - h / 2, w, h, h / 2);
-      ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill(); ctx.fillStyle = '#000';
-    }
-    ctx.fillText(text, centre.x + nudge.dx * unit, centre.y + nudge.dy * unit - (showsRole ? radius * 0.24 : 0));
+    drawPrintLabel(ctx, text, centre.x + nudge.dx * unit,
+      centre.y + nudge.dy * unit - (showsRole ? radius * 0.24 : 0), radius * 2, hasPhoto);
     if (showsRole) {
       ctx.font = `600 ${radius * 2 * ROLE_CHIP_FONT_FRACTION}px ${SYSTEM_FONT}`;
-      ctx.fillText(role, centre.x + nudge.dx * unit,
-        centre.y + nudge.dy * unit + radius * 0.46 - radius * 2 * roleLiftFraction(text));
+      drawPrintLabel(ctx, role, centre.x + nudge.dx * unit,
+        centre.y + nudge.dy * unit + radius * 0.46 - radius * 2 * roleLiftFraction(text), radius * 2, hasPhoto);
     }
   }
   if (state.showPositionBadges) {
     for (const zone of POSITION_ZONES) {
+      if (!state.showPhotoLabels && artwork.players[occupantAt(rotation, zone).id]) continue;
       const centre = point(rotation.positions[zone]);
       const side = radius * 2 * 0.40;
       const offset = -radius * 2 * 0.36;
@@ -289,6 +288,17 @@ function drawPrintCourt(ctx, index, left, top, width, height, artwork = { player
   ctx.textBaseline = 'alphabetic';
 }
 
+function drawPrintLabel(ctx, text, x, y, diameter, overPhoto) {
+  if (overPhoto) {
+    ctx.strokeStyle = '#000';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(0.35, diameter * 0.018) * 2;
+    ctx.strokeText(text, x, y);
+  }
+  ctx.fillStyle = overPhoto ? '#fff' : '#000';
+  ctx.fillText(text, x, y);
+}
+
 async function exportPrintPDF() {
   if (!window.jspdf) throw new Error('PDF library unavailable');
   const pageWidth = 792;
@@ -299,11 +309,8 @@ async function exportPrintPDF() {
   canvas.width = pageWidth * scale;
   canvas.height = pageHeight * scale;
   const ctx = canvas.getContext('2d');
-  const artwork = { players: {}, teamLogo: null };
-  await Promise.all([
-    ...Object.entries(state.images.players).map(async ([id, data]) => { artwork.players[id] = await loadImage(data); }),
-    state.images.teamLogo ? loadImage(state.images.teamLogo).then(image => { artwork.teamLogo = image; }) : Promise.resolve()
-  ]);
+  const artwork = { players: await preparePlayerPhotos(), teamLogo: null };
+  if (state.images.teamLogo) artwork.teamLogo = await loadImage(state.images.teamLogo).catch(() => null);
   ctx.scale(scale, scale);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, pageWidth, pageHeight);

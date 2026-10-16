@@ -68,9 +68,13 @@ async function checkText(svg, description, selector = '.player-label text, .posi
   for (const box of boxes) {
     const visible = pixelBounds(png, box, box.position
       ? ([r, g, b, a]) => r < 120 && g < 120 && b > r && a > 225
-      : ([r, g, b, a]) => r > 225 && g > 225 && b > 225 && a > 225);
+      // Tiny role glyphs can be entirely antialiased on macOS. Their light ink
+      // is still distinct from the colored disc even without pure-white pixels.
+      : ([r, g, b, a]) => r > 180 && g > 180 && b > 180 && a > 225);
     assert.ok(visible.count >= 4, `${description}: ${box.label} is not painted (${visible.count} pixels)`);
-    const ink = pixelBounds(isolated[box.layer], box, ([r, g, b, a]) => r > 225 && g > 225 && b > 225 && a > 225);
+    // Against isolated black, include partial coverage: a 6px "1" may have no
+    // pixels above 180, which would leave only the "O" and misreport its center.
+    const ink = pixelBounds(isolated[box.layer], box, ([r, g, b, a]) => r > 80 && g > 80 && b > 80 && a > 225);
     assert.ok(ink.count >= 4, `${description}: ${box.label} has no visible glyphs`);
     assert.ok(Math.abs(ink.y - box.centerY) <= 2, `${description}: ${box.position ? 'position' : 'player'} ${box.label} is vertically off-center by ${(ink.y - box.centerY).toFixed(2)}px`);
     assert.ok(Math.abs(ink.x - box.centerX) <= 2, `${description}: ${box.label} is horizontally off-center`);

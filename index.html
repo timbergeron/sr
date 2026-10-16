@@ -19,7 +19,7 @@
 </script>
 <link rel="icon" type="image/png" href="assets/favicon-64.png" />
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-<link rel="stylesheet" href="styles.css?v=9c4b5a99d03c" />
+<link rel="stylesheet" href="styles.css?v=4db9c6d364f0" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="qrcode.min.js?v=c541ef063278" defer></script>
@@ -162,7 +162,11 @@
       <div class="rotation-selector" id="rotation-selector" aria-label="Rotation"></div>
       <div class="passer-bar" id="passer-bar"></div>
       <div class="status-strip" id="status-strip"></div>
-      <div id="phone-zone-row"><button class="tool-button court-view-button" id="phone-court-view-button" type="button" aria-haspopup="menu" aria-expanded="false">Court view · Receive ▾</button></div>
+      <div id="phone-zone-row">
+        <button class="text-button reset-positions" id="phone-reset-button" type="button">Reset R1</button>
+        <button class="tool-button court-view-button" id="phone-court-view-button" type="button" aria-haspopup="menu" aria-expanded="false">Court view · Receive ▾</button>
+        <span class="reset-status" id="phone-reset-status">Positions adjusted</span>
+      </div>
     </section>
 
     <div class="courts" id="courts"></div>
@@ -258,6 +262,17 @@
   </form>
 </dialog>
 
+<dialog class="alert" id="reset-all-dialog" aria-labelledby="reset-all-title">
+  <form method="dialog">
+    <h2 id="reset-all-title">Reset all six rotations?</h2>
+    <p>Return players to court positions in all six rotations. Receiver selections and player details stay the same.</p>
+    <div class="dialog-actions">
+      <button class="button" value="cancel">Cancel</button>
+      <button class="button destructive" value="confirm">Reset All Rotations</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog class="alert" id="system-dialog" aria-labelledby="system-dialog-title">
   <form method="dialog">
     <h2 id="system-dialog-title">Switch system?</h2>
@@ -294,11 +309,11 @@
 </dialog>
 
 <script src="formation.js?v=70a18293dab8"></script>
-<script src="app.js?v=bccb5a08ff30"></script>
-<script src="images.js?v=37a12fb9add0"></script>
-<script src="labels.js?v=d43dcb407412"></script>
-<script src="court.js?v=42a41ea2d482"></script>
-<script src="export.js?v=4a59c9a1e140"></script>
-<script src="ui.js?v=78ab3c144af9"></script>
+<script src="app.js?v=2558e40e5ef3"></script>
+<script src="images.js?v=2821e4df8f1d"></script>
+<script src="labels.js?v=9b7f27f309df"></script>
+<script src="court.js?v=58f8a77268b7"></script>
+<script src="export.js?v=81756d211b8b"></script>
+<script src="ui.js?v=fc1c1472d302"></script>
 </body>
 </html>

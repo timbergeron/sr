@@ -8,6 +8,12 @@ const root = path.join(__dirname, '..');
 function app(saved = null) {
   const stored = new Map(saved ? [['serve-receive.setups.v1', saved]] : []);
   const context = vm.createContext({ TextEncoder, TextDecoder, btoa, atob,
+    // Decoding is covered with actual raster files in the browser regressions.
+    Image: class {
+      set src(data) { this.complete = true; this.naturalWidth = data.endsWith('YmFk') ? 0 : 512;
+        this.naturalHeight = this.naturalWidth;
+        if (this.naturalWidth) this.onload?.(); else this.onerror?.(); }
+    },
     window: { localStorage: { getItem: key => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) },
       matchMedia: () => ({ matches: false }) }, document: { addEventListener() {}, createElement(tag) {
       assert.equal(tag, 'canvas');
@@ -83,7 +89,7 @@ test('exported SVG includes six position badges only when enabled', () => {
 test('court view choices and edit actions expose native parity controls', () => {
   const run = app();
   assert.deepEqual(clean(run('courtViewMenuItems(2).filter(x => x.checked !== undefined).map(x => x.label)')),
-    ['Receive', 'Court Position', 'Player names & numbers', 'Position badges']);
+    ['Receive', 'Court Position', 'Player names & numbers', 'Labels on photos', 'Position badges']);
   assert.ok(run("editMenuItems().some(x => x.label === 'Reset All Rotations')"));
   assert.ok(run("editMenuItems().some(x => x.label === 'Smart Arrange All Rotations')"));
 });
@@ -386,7 +392,7 @@ test('print rendering clips photos to discs and draws the transparent watermark 
     const photoBitmap = {naturalWidth: 512, naturalHeight: 512};
     const logoBitmap = {naturalWidth: 200, naturalHeight: 100};
     const artworkContext = {save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, arcTo() {}, closePath() {},
-      stroke() {}, arc() {}, fill() {}, fillText() {}, measureText: text => ({width: text.length * 5}),
+      stroke() {}, arc() {}, fill() {}, fillText() {}, strokeText() {}, measureText: text => ({width: text.length * 5}),
       strokeRect() { printOrder.push('lines'); }, clip() { printOrder.push('clip'); },
       drawImage(image, ...args) { printOrder.push(image === logoBitmap ? 'logo' : 'photo'); printImages.push(args); }};
     drawPrintCourt(artworkContext, 0, 0, 0, 180, 180, {players: {O1: photoBitmap}, teamLogo: logoBitmap});`);
@@ -404,7 +410,7 @@ test('court SVG places logos beneath lines and follows the displayed roster thro
       const svg = run(`courtSVGString(${rotation}, {size: 400, floorHref: ''})`);
       assert.equal((svg.match(/class="player-photo"/g) || []).length, 2);
       assert.equal((svg.match(/class="team-logo"/g) || []).length, 1);
-      assert.equal((svg.match(/class="photo-caption"/g) || []).length, 2);
+      assert.doesNotMatch(svg, /class="photo-caption"/);
       assert.ok(svg.indexOf('class="team-logo"') < svg.indexOf('<line x1="0"'));
     }
   }
@@ -412,4 +418,66 @@ test('court SVG places logos beneath lines and follows the displayed roster thro
   assert.equal((run("courtSVGString(0, {size: 400, floorHref: ''})").match(/class="player-photo"/g) || []).length, 1);
   run('setWatermarkOpacity(0)');
   assert.doesNotMatch(run("courtSVGString(0, {size: 400, floorHref: ''})"), /class="team-logo"/);
+});
+
+test('photo label preference survives saved setups, links and undo without changing artwork or formations', () => {
+  const run = app();
+  assert.equal(run("'photoLabels' in buildSharePayload().display"), false);
+  run(`startApp(); setPlayerImage('O1', '${photo}'); const beforePhotoLabels = stateSnapshot();
+    setShowPhotoLabels(false); resetAllCourts(); undo();`);
+  assert.equal(run('buildSharePayload().display.photoLabels'), false);
+  assert.deepEqual(clean(run('stateSnapshot().positions')), clean(run('beforePhotoLabels.positions')));
+  assert.equal(run('state.images.players.O1'), photo);
+  const reload = app(run('backupText()')); reload('startApp()');
+  assert.equal(reload('state.showPhotoLabels'), false);
+  assert.equal(reload('state.images.players.O1'), photo);
+  run('applyState(normalizePayload(decodeSharePayload(encodeSharePayload(buildSharePayload()))))');
+  assert.equal(run('state.showPhotoLabels'), false);
+  run(`const legacyPhotoDisplay = buildSharePayload(); delete legacyPhotoDisplay.display.photoLabels;
+    applyState(normalizePayload(legacyPhotoDisplay));`);
+  assert.equal(run('state.showPhotoLabels'), true);
+});
+
+test('photo-only courts hide labels and position badges only for readable photos across all systems', () => {
+  const run = app();
+  run(`setPlayerImage('O1', '${photo}'); setPlayerImage('O2', 'data:image/png;base64,YmFk');
+    setShowPositionBadges(true); setShowPhotoLabels(false);`);
+  for (const system of ['4-2','5-1','6-2']) {
+    run(`setSystem('${system}')`);
+    for (let rotation = 0; rotation < 6; rotation++) {
+      const players = run(`courtPlayers(${rotation}, {positions: state.rotations[${rotation}].positions})`);
+      assert.equal(players.filter(p => p.showsLabels === false).length, 1);
+      const svg = run(`courtSVGString(${rotation}, {size: 400, floorHref: ''})`);
+      assert.equal((svg.match(/class="position-badge"/g) || []).length, 5);
+      assert.equal((svg.match(/class="player-photo"/g) || []).length, 1);
+    }
+  }
+  assert.equal(run("showsCourtLabels('O1')"), false);
+  assert.equal(run("showsCourtLabels('O2')"), true);
+  run("setPlayerImage('O1', null)");
+  assert.equal(run("showsCourtLabels('O1')"), true);
+});
+
+test('photo labels use outlined glyphs instead of a backing capsule', () => {
+  const run = app();
+  run(`setPlayerImage('O1', '${photo}'); state.playerNumbers = {O1: '07'};`);
+  const markup = run("labelTextMarkup(courtPlayers(0, {positions: state.rotations[0].positions}).find(p => p.occ.id === 'O1'))");
+  assert.doesNotMatch(markup, /<rect/);
+  assert.match(markup, /stroke-opacity="1"/);
+  assert.match(markup, /paint-order="stroke fill"/);
+});
+
+test('reset control reflects saved court positions and resets only its own rotation', () => {
+  const run = app();
+  run('startApp(); resetAllCourts(); forgetHistory()');
+  assert.equal(run('positionsAlreadyInZones(2)'), true);
+  run('state.rotations[2].positions[1].x -= 0.2');
+  assert.equal(run('positionsAlreadyInZones(2)'), false);
+  const before = clean(run('stateSnapshot()'));
+  run('resetCourtFromControls(2)');
+  assert.equal(run('positionsAlreadyInZones(2)'), true);
+  assert.equal(run('ui.zoneView.has(2)'), false);
+  assert.equal(run('undoStack.length'), 1);
+  run('undo()');
+  assert.deepEqual(clean(run('stateSnapshot()')), before);
 });
